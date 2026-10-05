@@ -1,0 +1,26 @@
+services:
+  saphir:
+    build: .
+    container_name: saphir
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    environment:
+      # PO token YouTube via le service bgutil ci-dessous (évite "Sign in to confirm you're not a bot")
+      POT_PROVIDER_URL: http://bgutil:4416
+      # cookies.txt (format Netscape) : à placer dans ./cookies/ — fortement conseillé pour Instagram
+      COOKIES_FILE: /cookies/cookies.txt
+      # décommente si saphir est derrière un reverse proxy (Caddy, Nginx, Traefik…)
+      # TRUST_PROXY: "1"
+      # PUBLIC_URL: https://dl.mondomaine.fr
+      # API_KEY: change-moi   # protège une instance publique
+    volumes:
+      - ./cookies:/cookies:ro
+    depends_on:
+      - bgutil
+
+  bgutil:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: saphir-bgutil
+    restart: unless-stopped
+    init: true

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>saphir</title>
+  <meta name="description" content="Télécharge vidéos, photos et audio depuis YouTube, Instagram, X, TikTok et +1800 sites. Sans pub, sans pistage.">
+  <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M9 4h14l7 8-14 17L2 12z" fill="currentColor" opacity=".18"/><path d="M9 4h14l7 8-14 17L2 12zM2 12h28M9 4l7 25M23 4l-7 25M9 4l4 8 3-8 3 8 4-8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <h1>saphir</h1>
+    </header>
+    <p class="tagline">colle un lien, récupère le média. sans pub, sans pistage.</p>
+
+    <form id="form" class="omnibox" autocomplete="off">
+      <svg class="omni-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1 1M14 10a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="url" type="url" inputmode="url" placeholder="colle le lien ici" aria-label="lien" spellcheck="false" autocapitalize="off">
+      <button id="clear" type="button" class="icon-btn" aria-label="effacer" hidden>
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="go" type="submit" class="go" aria-label="télécharger">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </form>
+
+    <div class="controls">
+      <div class="segmented" role="radiogroup" aria-label="mode">
+        <button type="button" data-mode="auto" role="radio">✨ auto</button>
+        <button type="button" data-mode="audio" role="radio">♪ audio</button>
+        <button type="button" data-mode="mute" role="radio">🔇 muet</button>
+      </div>
+      <div class="actions">
+        <button id="paste" type="button" class="chip">📋 coller</button>
+        <button id="settings-btn" type="button" class="chip" aria-expanded="false">⚙ réglages</button>
+      </div>
+    </div>
+
+    <section id="settings" class="panel" hidden>
+      <div class="field">
+        <label for="quality">qualité vidéo</label>
+        <select id="quality">
+          <option value="max">max (4K+ si dispo)</option>
+          <option value="2160">2160p</option>
+          <option value="1440">1440p</option>
+          <option value="1080">1080p</option>
+          <option value="720">720p</option>
+          <option value="480">480p</option>
+          <option value="360">360p</option>
+          <option value="240">240p</option>
+          <option value="144">144p</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="codec" title="h264 plafonne à 1080p sur YouTube">codec vidéo</label>
+        <select id="codec">
+          <option value="h264">h264 · lisible partout</option>
+          <option value="av1">av1 · léger, jusqu'en 8K</option>
+          <option value="vp9">vp9 · webm, jusqu'en 4K</option>
+          <option value="best">peu importe · le meilleur</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="audio_format">format audio</label>
+        <select id="audio_format">
+          <option value="mp3">mp3</option>
+          <option value="best">original (sans ré-encodage)</option>
+          <option value="m4a">m4a / aac</option>
+          <option value="opus">opus</option>
+          <option value="ogg">ogg</option>
+          <option value="wav">wav</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="audio_bitrate">débit audio</label>
+        <select id="audio_bitrate">
+          <option value="320">320 kb/s</option>
+          <option value="256">256 kb/s</option>
+          <option value="192">192 kb/s</option>
+          <option value="128">128 kb/s</option>
+          <option value="96">96 kb/s</option>
+          <option value="64">64 kb/s</option>
+        </select>
+      </div>
+      <label class="toggle"><input id="convert_gif" type="checkbox"> convertir les gifs X/Twitter en vrai .gif</label>
+      <label class="toggle"><input id="auto_start" type="checkbox"> lancer dès qu'un lien est collé</label>
+      <div id="key-field" class="field" hidden>
+        <label for="api_key">clé d'accès</label>
+        <input id="api_key" type="password" placeholder="clé fournie par l'admin">
+      </div>
+    </section>
+
+    <section id="status" class="card" hidden>
+      <div class="status-head">
+        <span id="status-text">analyse du lien…</span>
+        <span id="status-meta" class="muted"></span>
+      </div>
+      <div class="bar"><div id="bar-fill"></div></div>
+    </section>
+
+    <section id="error" class="card error" role="alert" hidden>
+      <strong id="error-text"></strong>
+      <details id="error-details" hidden><summary>détails techniques</summary><code id="error-detail"></code></details>
+    </section>
+
+    <section id="picker" hidden>
+      <div class="picker-head">
+        <div>
+          <div id="picker-title" class="picker-title"></div>
+          <div id="picker-sub" class="muted"></div>
+        </div>
+        <div class="picker-actions">
+          <button id="dl-audio" type="button" class="chip" hidden>♪ musique</button>
+          <button id="dl-all" type="button" class="chip primary">⬇ tout (.zip)</button>
+        </div>
+      </div>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <footer>
+      <div class="services">
+        <span>YouTube</span><span>Instagram</span><span>X / Twitter</span><span>TikTok</span><span>Reddit</span><span>Facebook</span><span>Bluesky</span><span>+1800 sites</span>
+      </div>
+      <div id="engine" class="muted small"></div>
+    </footer>
+  </main>
+  <template id="card-tpl">
+    <button type="button" class="tile">
+      <div class="thumb"><img alt="" loading="lazy"><span class="badge"></span><span class="dur"></span></div>
+      <div class="tile-foot"><span class="tile-name"></span><span class="tile-dl">⬇</span></div>
+    </button>
+  </template>
+  <script src="/static/app.js"></script>
+</body>
+</html>

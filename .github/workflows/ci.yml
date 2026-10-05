@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # tous les jours : détecte vite une plateforme qui casse
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -v
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t saphir .
+      - name: smoke test
+        run: |
+          docker run -d --name saphir -p 9000:9000 -e AUTO_UPDATE=0 saphir
+          for i in $(seq 1 30); do curl -sf localhost:9000/api/status && break; sleep 1; done
+          curl -sf localhost:9000/api/status | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['versions'], d['js_runtimes']); assert 'deno' in d['js_runtimes']"
+          docker exec saphir ffmpeg -version | head -1
+
+  live:
+    # vrais liens YouTube / Instagram / X / TikTok. Les IP de GitHub sont des IP
+    # de datacenter, souvent bridées par Instagram : un échec ici n'est pas
+    # forcément un bug, d'où continue-on-error.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      bgutil:
+        image: brainicism/bgutil-ytdlp-pot-provider:latest
+        ports:
+          - 4416:4416
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pip install -r requirements-dev.txt && pip install -U --pre "yt-dlp[default]" gallery-dl
+      - run: pytest -m live -v -s -rA
+        env:
+          RUN_LIVE: "1"
+          POT_PROVIDER_URL: http://localhost:4416
