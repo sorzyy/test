@@ -84,6 +84,10 @@ def _finish(match: ServiceMatch, main: ExtractResult, used: list[ExtractResult],
 
 async def _youtube_or_generic(match: ServiceMatch) -> Resolved:
     y = await ytdlp.extract(match)
+    if not y.ok and match.service == "youtube" and y.error in ("fetch.bot", "content.login", "fetch.fail"):
+        retry = await ytdlp.extract(match, ytdlp.YOUTUBE_FALLBACK_ARGS)
+        if retry.ok:
+            return _finish(match, retry, [retry])
     if y.ok:
         return _finish(match, y, [y])
     g = await gallerydl.extract(match.url)

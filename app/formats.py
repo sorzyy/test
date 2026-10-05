@@ -38,17 +38,13 @@ class Options(BaseModel):
         return v if v in AUDIO_BITRATES else "320"
 
 
-# format yt-dlp de conversion audio
-_YTDLP_AUDIO = {"mp3": "mp3", "best": "best", "m4a": "m4a", "opus": "opus", "ogg": "vorbis", "wav": "wav"}
 _CODEC_SORT = {"h264": "vcodec:h264", "av1": "vcodec:av01", "vp9": "vcodec:vp9"}
 
 
 def ytdlp_format_args(opts: Options) -> list[str]:
     if opts.mode == "audio":
-        args = ["-f", "ba/b", "-x", "--audio-format", _YTDLP_AUDIO[opts.audio_format]]
-        if opts.audio_format not in ("best", "wav"):
-            args += ["--audio-quality", f"{opts.audio_bitrate}K"]
-        return args
+        # la conversion est faite ensuite par saphir (ffmpeg), plus fiable que -x
+        return ["-f", "ba/b"]
 
     res = "res" if opts.quality == "max" else f"res:{opts.quality}"
     sort: list[str] = []

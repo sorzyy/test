@@ -136,3 +136,25 @@ def test_cobalt_tunnel_end_to_end(client, media_server, tmp_path):
 def test_not_found_error(client, media_server):
     res = client.post("/api/resolve", json={"url": f"{media_server}/missing"}).json()
     assert res["error"]["code"] == "content.unavailable"
+
+
+def test_direct_download_fallbacks(client, media_server, tmp_path):
+    from app import resolver
+    from app.models import MediaItem, Resolved
+
+    items = [
+        # 1re URL morte, la 2e marche
+        MediaItem(type="video", source="direct", url=f"{media_server}/dead.mp4",
+                  fallback_urls=[f"{media_server}/clip.mp4"], ext="mp4", title="a"),
+        # toutes les URL directes mortes : yt-dlp repart de la page
+        MediaItem(type="video", source="direct", url=f"{media_server}/dead.mp4", ext="mp4", title="b",
+                  page_url=f"{media_server}/clip2.mp4"),
+    ]
+    token = resolver.store(Resolved(service="tiktok", url="u", title="t", items=items))
+    for index in (0, 1):
+        job = client.post("/api/jobs", json={"token": token, "index": index, "options": {}}).json()
+        while job["status"] not in ("done", "error"):
+            time.sleep(0.2)
+            job = client.get(f"/api/jobs/{job['id']}").json()
+        assert job["status"] == "done", job
+        assert _streams(client.get(job["url"]).content, tmp_path) == [("video", "h264"), ("audio", "aac")]

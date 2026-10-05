@@ -214,18 +214,41 @@ async def download_item(job: Job, item: MediaItem, opts: Options, workdir: Path,
     job.status = "downloading"
     job.phase = label
     if item.source == "ytdlp":
-        path = await _ytdlp_download(job, item, opts, workdir, overall)
-        if opts.mode == "mute":
-            path = await _strip_audio(job, path)
-        return path
+        return await _ytdlp_item(job, item, opts, workdir, overall)
 
-    path = await _direct_download(job, item, workdir, overall)
+    try:
+        path = await _direct_download(job, item, workdir, overall)
+    except AppError as err:
+        # lien direct refusé (ex. 403 TikTok) : yt-dlp repart de la page
+        if not item.page_url or item.type not in ("video", "audio") or err.code == "content.too_big":
+            raise
+        log.info("direct download failed (%s), falling back to yt-dlp", err.detail or err.code)
+        page_item = MediaItem(type=item.type, source="ytdlp", page_url=item.page_url, title=item.title,
+                              id=item.id, extra_args=item.extra_args)
+        return await _ytdlp_item(job, page_item, opts, workdir, overall)
     if item.type in ("photo",):
         return path
     if item.type == "gif" and opts.mode != "audio":
         return await _to_gif(job, path) if opts.convert_gif else path
     if opts.mode == "audio":
         return await _to_audio(job, path, opts)
+    if opts.mode == "mute":
+        return await _strip_audio(job, path)
+    return path
+
+
+async def _ytdlp_item(job: Job, item: MediaItem, opts: Options, workdir: Path, overall) -> Path:
+    path = await _ytdlp_download(job, item, opts, workdir, overall)
+    if opts.mode == "audio":
+        try:
+            return await _to_audio(job, path, opts)
+        except AppError as err:
+            if err.code != "content.empty":
+                raise
+            # la "meilleure piste audio" n'en contenait pas : on prend la vidéo complète
+            log.info("no audio stream in best-audio format, retrying with full video")
+            path = await _ytdlp_download(job, item, opts, workdir, overall, fmt_args=["-f", "bv*+ba/b"])
+            return await _to_audio(job, path, opts)
     if opts.mode == "mute":
         return await _strip_audio(job, path)
     return path
@@ -241,15 +264,28 @@ def _set_progress(job: Job, fraction: float, overall: tuple[int, int] | None):
 
 
 async def _direct_download(job: Job, item: MediaItem, workdir: Path, overall) -> Path:
-    if not item.url:
+    candidates = [u for u in [item.url, *item.fallback_urls] if u]
+    if not candidates:
         raise AppError("content.empty")
-    await ensure_public_host(item.url)
+    error = AppError("download.fail")
+    for url in candidates:
+        try:
+            return await _fetch_url(job, item, url, workdir, overall)
+        except AppError as err:
+            if err.code == "content.too_big":
+                raise
+            error = err
+    raise error
+
+
+async def _fetch_url(job: Job, item: MediaItem, url: str, workdir: Path, overall) -> Path:
+    await ensure_public_host(url)
     limit = settings.max_filesize_mb * 1024 * 1024 if settings.max_filesize_mb else 0
     tmp = workdir / "download.part"
     started = time.monotonic()
     async with http_client(timeout=None) as client:
         try:
-            async with client.stream("GET", item.url, headers=item.headers) as r:
+            async with client.stream("GET", url, headers=item.headers) as r:
                 if r.status_code >= 400:
                     raise AppError("fetch.fail" if r.status_code != 404 else "content.unavailable",
                                    detail=f"HTTP {r.status_code}")
@@ -301,7 +337,8 @@ def _parse_progress(line: str) -> tuple[str, int, int, float | None, int | None]
     return status, int(num(done) or 0), int(total_bytes), num(speed), int(num(eta)) if num(eta) else None
 
 
-async def _ytdlp_download(job: Job, item: MediaItem, opts: Options, workdir: Path, overall) -> Path:
+async def _ytdlp_download(job: Job, item: MediaItem, opts: Options, workdir: Path, overall,
+                          fmt_args: list[str] | None = None) -> Path:
     phases = 1
     if item.info and opts.mode == "auto":
         phases = 2 if not item.has_audio or any(
@@ -337,7 +374,7 @@ async def _ytdlp_download(job: Job, item: MediaItem, opts: Options, workdir: Pat
         for leftover in workdir.glob("media.*"):
             leftover.unlink(missing_ok=True)
         with cookies_copy() as cookies:
-            cmd = ytdlp_base_args(cookies) + ytdlp_format_args(opts) + [
+            cmd = ytdlp_base_args(cookies) + item.extra_args + (fmt_args or ytdlp_format_args(opts)) + [
                 "--newline", "--progress", "--progress-template", _PROGRESS_TEMPLATE,
                 "--no-mtime", "--concurrent-fragments", "4",
                 "-o", str(workdir / "media.%(ext)s"),

@@ -16,7 +16,8 @@ from .tools import PYTHON, package_version, run
 
 log = logging.getLogger("saphir.updater")
 
-PACKAGES = ["yt-dlp[default]", "gallery-dl", "bgutil-ytdlp-pot-provider"]
+# curl-cffi : imitation de navigateur, indispensable pour TikTok
+PACKAGES = ["yt-dlp[default,curl-cffi]", "gallery-dl", "bgutil-ytdlp-pot-provider"]
 
 state = {
     "last_check": None,

@@ -173,7 +173,5 @@ def test_format_args():
     assert ytdlp_format_args(Options(codec="vp9", quality="max"))[3] == "vcodec:vp9,res,acodec:opus"
     assert ytdlp_format_args(Options(codec="best", quality="2160p"))[3] == "res:2160,acodec:aac"
     assert ytdlp_format_args(Options(mode="mute"))[1] == "bv/bv*/b"
-    audio = ytdlp_format_args(Options(mode="audio", audio_format="ogg", audio_bitrate="128"))
-    assert audio == ["-f", "ba/b", "-x", "--audio-format", "vorbis", "--audio-quality", "128K"]
-    assert "--audio-quality" not in ytdlp_format_args(Options(mode="audio", audio_format="best"))
+    assert ytdlp_format_args(Options(mode="audio", audio_format="ogg")) == ["-f", "ba/b"]
     assert Options(quality="9999", audio_format="flac", audio_bitrate="1").model_dump()["quality"] == "1080"

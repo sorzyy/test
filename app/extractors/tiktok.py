@@ -99,20 +99,23 @@ def parse_item(item: dict, post_id: str, cookie: str) -> ExtractResult:
             result.error = "content.empty"
         return result
 
-    play = video.get("playAddr")
-    # bitrateInfo contient les variantes h264 sans filigrane
+    # playAddr (sans filigrane, comme Cobalt) d'abord, puis les variantes h264
+    # de bitrateInfo par débit décroissant, puis downloadAddr (avec filigrane)
     variants = []
     for b in video.get("bitrateInfo") or []:
-        urls = ((b.get("PlayAddr") or {}).get("UrlList")) or []
-        if urls:
-            codec = str(b.get("CodecType") or "")
-            variants.append((("h264" in codec), b.get("Bitrate") or 0, urls[-1]))
-    if variants:
-        variants.sort(reverse=True)
-        play = variants[0][2]
-    if play:
+        codec = str(b.get("CodecType") or "")
+        for u in ((b.get("PlayAddr") or {}).get("UrlList")) or []:
+            variants.append(("h264" in codec, b.get("Bitrate") or 0, u))
+    variants.sort(key=lambda v: (v[0], v[1]), reverse=True)
+    candidates = []
+    for u in [video.get("playAddr"), *(v[2] for v in variants), video.get("downloadAddr")]:
+        if isinstance(u, str) and u.startswith("http") and u not in candidates:
+            candidates.append(u)
+    author_id = result.author or "i"
+    if candidates:
         result.items.append(MediaItem(
-            type="video", source="direct", url=play, ext="mp4", id=post_id,
+            type="video", source="direct", url=candidates[0], fallback_urls=candidates[1:], ext="mp4", id=post_id,
+            page_url=f"https://www.tiktok.com/@{author_id}/video/{post_id}",
             thumbnail=video.get("originCover") or video.get("cover"),
             duration=video.get("duration"), width=video.get("width"), height=video.get("height"),
             has_audio=True, **base))

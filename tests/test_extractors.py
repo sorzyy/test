@@ -174,7 +174,10 @@ def test_tiktok_video_prefers_h264_variant():
             {"CodecType": "h264", "Bitrate": 1500000, "PlayAddr": {"UrlList": ["https://v/h264.mp4"]}}]},
         "music": {"playUrl": "https://m/m.mp3"}}
     res = tiktok.parse_item(item, "1", "")
-    assert res.items[0].type == "video" and res.items[0].url == "https://v/h264.mp4"
+    item = res.items[0]
+    assert item.type == "video" and item.url == "https://v16.tiktokcdn.com/play.mp4"
+    assert item.fallback_urls == ["https://v/h264.mp4", "https://v/h265.mp4"]
+    assert item.page_url == "https://www.tiktok.com/@u/video/1"
     assert "Cookie" not in res.items[0].headers
 
 

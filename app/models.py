@@ -19,12 +19,14 @@ class MediaItem:
     ext: str | None = None
     # source == "direct" : URL du fichier + en-têtes nécessaires
     url: str | None = None
+    fallback_urls: list[str] = field(default_factory=list)  # essayées si `url` échoue
     headers: dict[str, str] = field(default_factory=dict)
     # source == "ytdlp" : dictionnaire d'info complet (rejoué au téléchargement)
     info: dict[str, Any] | None = None
     # pour re-extraire si l'info a expiré
     page_url: str | None = None
     playlist_index: int | None = None
+    extra_args: list[str] = field(default_factory=list)  # options yt-dlp à rejouer au téléchargement
     has_audio: bool | None = None
 
     def public(self, index: int) -> dict:

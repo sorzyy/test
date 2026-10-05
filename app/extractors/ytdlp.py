@@ -17,10 +17,15 @@ _STRIP_KEYS = ("automatic_captions", "subtitles", "comments", "heatmap", "chapte
                "requested_subtitles", "thumbnails_extra", "_format_sort_fields_extra")
 
 
-async def extract(match: ServiceMatch) -> ExtractResult:
+# Clients YouTube essayés quand le client par défaut est bloqué ("not a bot").
+YOUTUBE_FALLBACK_ARGS = ["--extractor-args", "youtube:player_client=tv_simply,tv,web_safari,mweb,android_vr"]
+
+
+async def extract(match: ServiceMatch, extra_args: list[str] | None = None) -> ExtractResult:
     with cookies_copy() as cookies:
         # les avertissements restent dans stderr : ils expliquent un échec
-        cmd = ytdlp_base_args(cookies, warnings=True) + ["-J", "--playlist-end", str(settings.max_items)]
+        cmd = ytdlp_base_args(cookies, warnings=True) + (extra_args or []) + [
+            "-J", "--playlist-end", str(settings.max_items)]
         if match.service == "instagram":
             # les photos d'un carrousel n'ont pas de "format" vidéo
             cmd.append("--ignore-no-formats-error")
@@ -40,6 +45,9 @@ async def extract(match: ServiceMatch) -> ExtractResult:
     if not isinstance(data, dict):
         return ExtractResult("yt-dlp", error=classify(res.stderr), detail=last_error_line(res.stderr))
     result = parse_info(data, match)
+    for item in result.items:
+        if item.source == "ytdlp":
+            item.extra_args = list(extra_args or [])
     if not result.ok and res.stderr.strip():
         # ex. formats YouTube écartés faute de PO token : l'explication est dans les avertissements
         result.detail = last_error_line(res.stderr)
