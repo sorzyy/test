@@ -31,6 +31,8 @@ def media_server(tmp_path_factory):
         "-t", "2", "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", str(root / "clip.mp4"))
     _ff("-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25", "-f", "lavfi", "-i", "sine=frequency=880",
         "-t", "2", "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", str(root / "clip2.mp4"))
+    _ff("-f", "lavfi", "-i", "testsrc=size=160x120:rate=10", "-t", "1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(root / "silent.mp4"))
     (root / "dash").mkdir()
     _ff("-f", "lavfi", "-i", "testsrc=size=640x480:rate=25", "-f", "lavfi", "-i", "sine=frequency=440", "-t", "3",
         "-map", "0:v", "-map", "0:v", "-map", "1:a", "-c:v:0", "libx264", "-s:v:0", "640x480",
@@ -158,3 +160,13 @@ def test_direct_download_fallbacks(client, media_server, tmp_path):
             job = client.get(f"/api/jobs/{job['id']}").json()
         assert job["status"] == "done", job
         assert _streams(client.get(job["url"]).content, tmp_path) == [("video", "h264"), ("audio", "aac")]
+
+
+
+def test_audio_mode_on_silent_video(client, media_server):
+    res = client.post("/api/resolve", json={"url": f"{media_server}/silent.mp4"}).json()
+    job = client.post("/api/jobs", json={"token": res["token"], "index": 0, "options": {"mode": "audio"}}).json()
+    while job["status"] not in ("done", "error"):
+        time.sleep(0.2)
+        job = client.get(f"/api/jobs/{job['id']}").json()
+    assert job["status"] == "error" and job["error"]["code"] == "content.no_audio"

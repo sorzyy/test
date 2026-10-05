@@ -28,7 +28,7 @@ CASES = [
     ("instagram-video-post", "https://www.instagram.com/p/Bqxp0VSBgJg/", ["video"], "auto"),
     ("instagram-photo", "https://www.instagram.com/p/BqvsDleB3lV/", ["photo"], "auto"),
     ("instagram-carousel", "https://www.instagram.com/p/BoHk1haB5tM/", None, "auto"),
-    ("instagram-audio", "https://www.instagram.com/reel/Chunk8-jurw/", ["video"], "audio"),
+    ("instagram-audio", "https://www.instagram.com/p/Bqxp0VSBgJg/", ["video"], "audio"),
     ("twitter-video", "https://x.com/historyinmemes/status/1790637656616943991", ["video"], "auto"),
     ("twitter-video-audio", "https://x.com/historyinmemes/status/1790637656616943991", ["video"], "audio"),
     ("twitter-photos", "https://twitter.com/perrypumas/status/894001459754180609",
@@ -54,6 +54,9 @@ def client(tmp_path_factory):
 def test_live(client, name, url, expected, mode):
     started = time.time()
     res = client.post("/api/resolve", json={"url": url}).json()
+    if res.get("error", {}).get("code") == "fetch.bot":
+        # IP de datacenter bloquée par la plateforme : pas un bug de saphir
+        pytest.skip(f"{name}: IP du runner bloquée (anti-bot)")
     assert "error" not in res, f"{name}: {res.get('error')}"
     types = [i["type"] for i in res["items"]]
     print(f"\n[{name}] engines={res['engines']} items={types} audio={bool(res['audio'])} "

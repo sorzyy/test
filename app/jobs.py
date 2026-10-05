@@ -243,7 +243,7 @@ async def _ytdlp_item(job: Job, item: MediaItem, opts: Options, workdir: Path, o
         try:
             return await _to_audio(job, path, opts)
         except AppError as err:
-            if err.code != "content.empty":
+            if err.code != "content.no_audio":
                 raise
             # la "meilleure piste audio" n'en contenait pas : on prend la vidéo complète
             log.info("no audio stream in best-audio format, retrying with full video")
@@ -420,7 +420,7 @@ async def _to_audio(job: Job, path: Path, opts: Options) -> Path:
     src_ext = path.suffix.lstrip(".").lower()
     streams = await ffprobe_streams(path)
     if streams and not any(s.get("codec_type") == "audio" for s in streams):
-        raise AppError("content.empty", detail="pas de piste audio")
+        raise AppError("content.no_audio")
     if opts.audio_format == "best" and src_ext in ("mp3", "m4a", "opus", "ogg", "aac", "flac", "wav"):
         return path
     if opts.audio_format == src_ext:

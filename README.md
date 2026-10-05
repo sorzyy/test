@@ -52,6 +52,8 @@ Instagram bride fortement les visiteurs non connectés, surtout depuis des IP de
    - sans Docker : `cookies.txt` à la racine du projet
 4. Redémarre (`docker compose restart`)
 
+**Sans Docker, plus simple** : lance saphir avec `COOKIES_FROM_BROWSER=firefox` (ou `chrome`, `edge`, `brave`…) et il utilise directement les cookies du navigateur où tu es connecté. Firefox est le plus fiable : sous Windows, Chrome chiffre ses cookies d'une façon que yt-dlp ne sait pas toujours lire.
+
 Le même fichier peut contenir les cookies de plusieurs sites (Instagram, YouTube, X, TikTok…) : exporte-les les uns après les autres et colle-les dans le même fichier. Pour YouTube, des cookies ne servent qu'aux vidéos avec restriction d'âge ou réservées aux membres, le PO token suffit pour le reste.
 
 ## Configuration
@@ -62,6 +64,7 @@ Tout se règle par variables d'environnement (dans `docker-compose.yml`) :
 |---|---|---|
 | `PORT` | `9000` | port HTTP |
 | `COOKIES_FILE` | `cookies.txt` s'il existe | fichier cookies au format Netscape |
+| `COOKIES_FROM_BROWSER` | — | sans Docker : lit les cookies d'un navigateur installé (`firefox`, `chrome`, `edge`, `brave`…) |
 | `POT_PROVIDER_URL` | — | serveur bgutil pour les PO tokens YouTube (`http://bgutil:4416` dans le compose) |
 | `AUTO_UPDATE` | `1` | met à jour yt-dlp / gallery-dl tout seul |
 | `UPDATE_CHANNEL` | `nightly` | `nightly` (correctifs plus rapides) ou `stable` |
@@ -139,7 +142,7 @@ La CI GitHub lance aussi les tests live une fois par jour, pour repérer une pla
 
 ## Dépannage
 
-- **YouTube : "Sign in to confirm you're not a bot"** : vérifie que le service `bgutil` tourne (`docker compose ps`). Si ça persiste, l'IP du serveur est grillée : ajoute des cookies YouTube, ou passe par un `PROXY` résidentiel.
+- **YouTube : "Sign in to confirm you're not a bot"** : YouTube bloque presque toutes les IP de datacenter (VPS, cloud, CI), quel que soit l'outil, Cobalt compris. Chez toi (connexion perso), ça marche normalement. Sur un serveur : ajoute des cookies YouTube (compte secondaire) ou un `PROXY` résidentiel, et vérifie que le service `bgutil` tourne (`docker compose ps`).
 - **Instagram : "connexion requise"** : ajoute un `cookies.txt` (voir plus haut).
 - **Un site qui marchait ne marche plus** : la mise à jour auto récupère le correctif en général sous 24 h. Pour forcer : `curl -X POST localhost:9000/api/update` (depuis le serveur, ou avec `Authorization: Api-Key …`).
 - **Infos et versions** : `http://localhost:9000/api/status`.

@@ -70,6 +70,8 @@ def ytdlp_base_args(cookies: str | None, warnings: bool = False) -> list[str]:
             args += ["--js-runtimes", rt]
     if cookies:
         args += ["--cookies", cookies]
+    elif settings.cookies_from_browser:
+        args += ["--cookies-from-browser", settings.cookies_from_browser]
     if settings.proxy:
         args += ["--proxy", settings.proxy]
     if settings.pot_provider_url:
@@ -85,6 +87,8 @@ def gallerydl_base_args(cookies: str | None) -> list[str]:
     args = [PYTHON, "-m", "gallery_dl", "--config-ignore"]
     if cookies:
         args += ["--cookies", cookies]
+    elif settings.cookies_from_browser:
+        args += ["--cookies-from-browser", settings.cookies_from_browser]
     if settings.proxy:
         args += ["-o", f"proxy={settings.proxy}"]
     return args

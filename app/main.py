@@ -196,7 +196,7 @@ async def api_status():
         "versions": updater.versions(),
         "update": {"auto": settings.auto_update, "channel": settings.update_channel,
                    "last_check": updater.state["last_check"], "last_result": updater.state["last_result"]},
-        "cookies": bool(settings.cookies_file),
+        "cookies": bool(settings.cookies_file or settings.cookies_from_browser),
         "po_token_provider": bool(settings.pot_provider_url),
         "js_runtimes": js_runtimes(),
         "services": SUPPORTED_SERVICES,
@@ -223,6 +223,7 @@ _COBALT_ERRORS = {
     "content.age": "error.api.content.post.age", "content.geo": "error.api.content.video.region",
     "content.unavailable": "error.api.content.video.unavailable", "content.live": "error.api.content.video.live",
     "content.too_long": "error.api.content.too_long", "content.empty": "error.api.fetch.empty",
+    "content.no_audio": "error.api.content.video.no_audio",
     "fetch.rate": "error.api.fetch.rate", "fetch.bot": "error.api.youtube.login",
     "rate.exceeded": "error.api.rate_exceeded", "auth.required": "error.api.auth.key.missing",
 }

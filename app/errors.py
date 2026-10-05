@@ -19,6 +19,7 @@ MESSAGES = {
     "content.too_long": "Cette vidéo dépasse la durée maximale autorisée sur ce serveur.",
     "content.too_big": "Ce fichier dépasse la taille maximale autorisée sur ce serveur.",
     "content.empty": "Aucun média téléchargeable n'a été trouvé à ce lien.",
+    "content.no_audio": "Cette vidéo n'a pas de son : rien à extraire en mode audio.",
     "fetch.bot": "La plateforme bloque temporairement le serveur (détection anti-bot). "
                  "Réessaie plus tard, ou configure cookies / PO token (voir le README).",
     "fetch.rate": "Trop de requêtes vers la plateforme. Réessaie dans quelques minutes.",

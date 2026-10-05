@@ -36,6 +36,8 @@ class Settings:
     # Fichier cookies au format Netscape (cookies.txt), utilisé par yt-dlp,
     # gallery-dl et les extracteurs natifs. Fortement conseillé pour Instagram.
     cookies_file: Path | None = None
+    # ou lire directement les cookies d'un navigateur installé (usage local) : firefox, chrome, edge…
+    cookies_from_browser: str | None = None
     # Autorise les URLs vers des IP privées / localhost (désactivé par défaut
     # pour éviter le SSRF sur une instance publique).
     allow_private_urls: bool = False
@@ -82,6 +84,7 @@ class Settings:
             download_timeout=_int("DOWNLOAD_TIMEOUT", 1800),
             public_url=_str("PUBLIC_URL"),
             trust_proxy=_bool("TRUST_PROXY", False),
+            cookies_from_browser=_str("COOKIES_FROM_BROWSER"),
         )
         temp = _str("TEMP_DIR")
         if temp:
