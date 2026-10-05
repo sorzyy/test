@@ -55,15 +55,21 @@
   });
 
   // --- API -------------------------------------------------------------------
+  // vide = même serveur ; sur GitHub Pages, config.js pointe vers le serveur saphir
+  const API = String((window.SAPHIR_CONFIG || {}).api || "").replace(/\/+$/, "");
+  const apiUrl = (path) => (/^https?:/.test(path) ? path : API + path);
+
   async function api(path, body) {
     const headers = { "Accept": "application/json" };
     if (body) headers["Content-Type"] = "application/json";
     if (prefs.api_key) headers["Authorization"] = "Api-Key " + prefs.api_key;
     let res;
     try {
-      res = await fetch(path, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
+      res = await fetch(apiUrl(path), { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
     } catch {
-      throw { message: "Impossible de joindre le serveur. Vérifie ta connexion." };
+      throw { message: API
+        ? "Impossible de joindre le serveur saphir. S'il était en veille, il redémarre : réessaie dans 30 secondes."
+        : "Impossible de joindre le serveur. Vérifie ta connexion." };
     }
     let data = null;
     try { data = await res.json(); } catch { /* réponse vide */ }
@@ -122,7 +128,7 @@
     busy(true);
     hideError();
     els.picker.hidden = true;
-    showStatus("analyse du lien…");
+    showStatus(API ? "analyse du lien… (le 1er essai peut prendre ~30 s si le serveur dormait)" : "analyse du lien…");
     try {
       current = await api("/api/resolve", { url });
       const items = current.items;
@@ -159,7 +165,7 @@
       }
       if (job.status === "error") throw job.error;
       showStatus(`✓ ${job.filename}`, fmtBytes(job.size), 100);
-      save(job.url, job.filename);
+      save(apiUrl(job.url), job.filename);
       if (tile) tile.classList.add("done");
     } catch (err) {
       showError(err);
@@ -190,7 +196,7 @@
     res.items.forEach((item, i) => {
       const node = tpl.content.firstElementChild.cloneNode(true);
       const img = node.querySelector("img");
-      if (item.hasThumbnail) img.src = `/api/thumb/${res.token}/${i}`; else img.remove();
+      if (item.hasThumbnail) img.src = apiUrl(`/api/thumb/${res.token}/${i}`); else img.remove();
       img.onerror = () => img.remove();
       node.querySelector(".badge").textContent = TYPE_LABEL[item.type] || item.type;
       node.querySelector(".dur").textContent = fmtDur(item.duration);
@@ -238,6 +244,9 @@
     const h = Math.round(m / 60);
     return h < 48 ? `il y a ${h} h` : `il y a ${Math.round(h / 24)} j`;
   };
+  if ((window.SAPHIR_CONFIG || {}).missing) {
+    showError({ message: "Le serveur saphir n'est pas encore branché sur cette page. Voir le README (déploiement)." });
+  }
   api("/api/status").then((s) => {
     els.keyField.hidden = !s.auth_required;
     if (s.auth_required && !prefs.api_key) els.settings.hidden = false;

@@ -41,6 +41,21 @@ Prérequis : Python 3.10+, [ffmpeg](https://ffmpeg.org/download.html) et [deno](
 - **Windows** : `winget install Gyan.FFmpeg DenoLand.Deno`, puis double-clic sur `start.bat`
 - **macOS / Linux** : `brew install ffmpeg deno` (ou `apt install ffmpeg`), puis `./start.sh`
 
+## Mettre en ligne (URL publique)
+
+GitHub Pages n'héberge que des pages statiques : il affiche l'interface, mais le travail (yt-dlp, ffmpeg) doit tourner sur un vrai serveur. Il y a donc deux étapes :
+
+**1. Le serveur, sur Render (gratuit)**
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sorzyy/test)
+
+Clique le bouton, connecte-toi avec GitHub, puis valide. Render construit l'image Docker (~5 min) et te donne une adresse du type `https://saphir-xxxx.onrender.com`, qui affiche déjà l'interface complète. L'offre gratuite met le serveur en veille après 15 min sans visite : le premier lien suivant prend environ 30 s.
+
+**2. L'interface sur GitHub Pages** (optionnel, pour l'adresse `https://sorzyy.github.io/test/`)
+- mets l'adresse Render dans `deploy/api-url.txt` et pousse : le workflow *GitHub Pages* publie la page
+- s'il échoue à la première publication : *Settings → Pages → Build and deployment → Source : GitHub Actions*, puis relance le workflow
+
+À savoir : sur un hébergeur (Render ou autre), YouTube bloque la plupart des IP de datacenter. Pour YouTube, ajoute des cookies (variable `COOKIES_FILE` via un *Secret File* Render) ou garde une instance chez toi. Instagram, X et TikTok marchent sans réglage, mais un `cookies.txt` Instagram reste conseillé pour un usage régulier.
+
 ## Débloquer Instagram (et le contenu réservé aux membres) : les cookies
 
 Instagram bride fortement les visiteurs non connectés, surtout depuis des IP de serveurs. Avec les cookies d'un compte, tout passe : posts, reels, carrousels, stories, contenus +18.
@@ -78,6 +93,7 @@ Tout se règle par variables d'environnement (dans `docker-compose.yml`) :
 | `PROXY` | — | proxy sortant (`http://…`, `socks5://…`), utile si l'IP du serveur est bloquée |
 | `TRUST_PROXY` | `0` | lit l'IP client dans `X-Forwarded-For` (derrière Caddy / Nginx) |
 | `PUBLIC_URL` | — | URL publique, utilisée dans les liens de l'API Cobalt |
+| `CORS_ORIGINS` | `*` | sites autorisés à appeler l'API depuis un navigateur (ex. `https://sorzyy.github.io`) |
 | `JOB_TTL` | `900` | secondes avant suppression d'un fichier préparé |
 | `ALLOW_PRIVATE_URLS` | `0` | autorise les liens vers le réseau local (désactivé par sécurité) |
 | `YTDLP_EXTRA_ARGS` | — | options yt-dlp supplémentaires, ex. `--extractor-args "youtube:player-client=mweb,tv"` |

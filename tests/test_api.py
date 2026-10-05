@@ -105,3 +105,10 @@ def test_build_filename():
     long = Resolved(service="youtube", url="u", title="a/b:c*d?" + "x" * 200)
     name = jobs.build_filename(long, None, "mp4", None)
     assert "/" not in name and len(name) <= 84
+
+
+def test_cors_for_external_frontend(client):
+    r = client.options("/api/resolve", headers={"Origin": "https://sorzyy.github.io",
+                                                "Access-Control-Request-Method": "POST",
+                                                "Access-Control-Request-Headers": "content-type"})
+    assert r.status_code == 200 and r.headers["access-control-allow-origin"] in ("*", "https://sorzyy.github.io")

@@ -60,6 +60,8 @@ class Settings:
     download_timeout: int = 1800
     public_url: str | None = None  # URL publique (API compatible Cobalt)
     trust_proxy: bool = False  # faire confiance à X-Forwarded-For (derrière un reverse proxy)
+    # origines autorisées à appeler l'API depuis un navigateur (interface hébergée ailleurs)
+    cors_origins: list[str] = field(default_factory=lambda: ["*"])
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -85,6 +87,7 @@ class Settings:
             public_url=_str("PUBLIC_URL"),
             trust_proxy=_bool("TRUST_PROXY", False),
             cookies_from_browser=_str("COOKIES_FROM_BROWSER"),
+            cors_origins=[o.strip() for o in (_str("CORS_ORIGINS", "*") or "*").split(",") if o.strip()],
         )
         temp = _str("TEMP_DIR")
         if temp:

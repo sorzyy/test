@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -48,6 +49,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="saphir", version=__version__, lifespan=lifespan, docs_url="/api/docs", redoc_url=None)
+# l'interface peut être servie ailleurs (ex. GitHub Pages) : on autorise les appels cross-origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+    expose_headers=["Content-Disposition"],
+)
 
 
 @app.exception_handler(AppError)

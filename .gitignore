@@ -7,3 +7,4 @@ cookies/*
 !cookies/.gitkeep
 cookies.txt
 *.part
+_site/
