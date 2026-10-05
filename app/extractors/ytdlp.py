@@ -19,11 +19,11 @@ _STRIP_KEYS = ("automatic_captions", "subtitles", "comments", "heatmap", "chapte
 
 async def extract(match: ServiceMatch) -> ExtractResult:
     with cookies_copy() as cookies:
-        cmd = ytdlp_base_args(cookies) + [
-            "-J",
-            "--ignore-no-formats-error",
-            "--playlist-end", str(settings.max_items),
-        ]
+        # les avertissements restent dans stderr : ils expliquent un échec
+        cmd = ytdlp_base_args(cookies, warnings=True) + ["-J", "--playlist-end", str(settings.max_items)]
+        if match.service == "instagram":
+            # les photos d'un carrousel n'ont pas de "format" vidéo
+            cmd.append("--ignore-no-formats-error")
         if match.service == "youtube" and match.kind == "playlist":
             cmd.append("--flat-playlist")
         cmd += ["--", match.url]
@@ -39,7 +39,13 @@ async def extract(match: ServiceMatch) -> ExtractResult:
             data = None
     if not isinstance(data, dict):
         return ExtractResult("yt-dlp", error=classify(res.stderr), detail=last_error_line(res.stderr))
-    return parse_info(data, match)
+    result = parse_info(data, match)
+    if not result.ok and res.stderr.strip():
+        # ex. formats YouTube écartés faute de PO token : l'explication est dans les avertissements
+        result.detail = last_error_line(res.stderr)
+        if result.error == "content.empty" and classify(res.stderr) != "fetch.fail":
+            result.error = classify(res.stderr)
+    return result
 
 
 def best_thumbnail(info: dict) -> str | None:

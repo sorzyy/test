@@ -58,6 +58,11 @@ jobs:
           deno-version: v2.x
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: pip install -r requirements-dev.txt && pip install -U --pre "yt-dlp[default]" gallery-dl
+      - name: diagnostic YouTube (yt-dlp verbeux)
+        continue-on-error: true
+        run: |
+          python -m yt_dlp -v -F --extractor-args "youtubepot-bgutilhttp:base_url=http://localhost:4416" \
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw" 2>&1 | tail -60
       - run: pytest -m live -v -s -rA
         env:
           RUN_LIVE: "1"

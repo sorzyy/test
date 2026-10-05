@@ -51,17 +51,18 @@ def _tmp_root() -> str:
     return str(settings.temp_dir)
 
 
-def ytdlp_base_args(cookies: str | None) -> list[str]:
+def ytdlp_base_args(cookies: str | None, warnings: bool = False) -> list[str]:
     args = [
         PYTHON, "-m", "yt_dlp",
         "--ignore-config",
-        "--no-warnings",
         "--no-playlist",
         "--no-cache-dir",
         "--socket-timeout", "20",
         "--retries", "3",
         "--extractor-retries", "3",
     ]
+    if not warnings:
+        args.append("--no-warnings")
     runtimes = js_runtimes()
     if runtimes:
         args.append("--no-js-runtimes")
