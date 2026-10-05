@@ -22,7 +22,7 @@ from . import __version__, jobs, resolver, updater
 from .config import settings
 from .errors import AppError
 from .formats import Options
-from .netutil import http_client
+from .netutil import ensure_public_host, http_client
 from .services import SUPPORTED_SERVICES
 from .tools import js_runtimes
 
@@ -158,6 +158,7 @@ async def api_thumb(token: str, index: str):
         raise AppError("content.empty", status=404)
     if not item or not item.thumbnail:
         raise AppError("content.empty", status=404)
+    await ensure_public_host(item.thumbnail)
     client = http_client()
     try:
         req = client.build_request("GET", item.thumbnail, headers=item.headers)

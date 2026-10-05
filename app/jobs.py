@@ -18,7 +18,7 @@ from .config import settings
 from .errors import AppError, classify, last_error_line
 from .formats import Options, ffmpeg_audio_args, ytdlp_format_args
 from .models import MediaItem, Resolved
-from .netutil import http_client
+from .netutil import ensure_public_host, http_client
 from .tools import cookies_copy, ffmpeg, ffprobe_streams, run, ytdlp_base_args
 
 log = logging.getLogger("saphir.jobs")
@@ -243,6 +243,7 @@ def _set_progress(job: Job, fraction: float, overall: tuple[int, int] | None):
 async def _direct_download(job: Job, item: MediaItem, workdir: Path, overall) -> Path:
     if not item.url:
         raise AppError("content.empty")
+    await ensure_public_host(item.url)
     limit = settings.max_filesize_mb * 1024 * 1024 if settings.max_filesize_mb else 0
     tmp = workdir / "download.part"
     started = time.monotonic()
