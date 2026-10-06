@@ -1,0 +1,34 @@
+name: Tester un lien
+
+# Actions → "Tester un lien" → Run workflow : diagnostique n'importe quelle URL
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Lien à tester"
+        required: true
+      mode:
+        description: "auto, audio ou mute"
+        default: auto
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pip install -r requirements-dev.txt && pip install -U --pre "yt-dlp[default,curl-cffi]" gallery-dl
+      - run: python scripts/check_url.py "${{ inputs.url }}" "${{ inputs.mode }}"
+      - name: yt-dlp verbeux
+        if: always()
+        run: python -m yt_dlp -v -F "${{ inputs.url }}" 2>&1 | tail -40
