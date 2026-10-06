@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__, jobs, resolver, updater
+from . import __version__, jobs, resolver, updater, workers
 from .config import settings
 from .errors import AppError
 from .formats import Options
@@ -38,6 +38,8 @@ STARTED = time.time()
 async def lifespan(app: FastAPI):
     settings.temp_dir.mkdir(parents=True, exist_ok=True)
     tasks = [asyncio.create_task(jobs.cleanup_loop())]
+    if workers.pool is not None:
+        tasks.append(asyncio.create_task(workers.pool.warm_up()))
     if settings.auto_update:
         tasks.append(asyncio.create_task(updater.update_loop()))
     log.info("saphir %s prêt — cookies: %s, js: %s, PO token: %s", __version__,
@@ -46,6 +48,8 @@ async def lifespan(app: FastAPI):
     yield
     for t in tasks:
         t.cancel()
+    if workers.pool is not None:
+        await workers.pool.aclose()
 
 
 app = FastAPI(title="saphir", version=__version__, lifespan=lifespan, docs_url="/api/docs", redoc_url=None)

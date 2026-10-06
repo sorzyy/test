@@ -75,6 +75,9 @@ jobs:
           grep -v '^#' deploy/check-urls.txt | while read -r u; do
             [ -n "$u" ] && echo "=== $u" && python scripts/check_url.py "$u" 2>&1 | tail -30
           done
+      - name: sonde Instagram (embed + miroirs)
+        continue-on-error: true
+        run: python scripts/probe_instagram.py DZLNSwDxac6 reel
       - run: pytest -m live -v -s -rA
         env:
           RUN_LIVE: "1"

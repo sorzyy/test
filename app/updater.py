@@ -59,6 +59,10 @@ async def update_now() -> dict:
             res = await run(cmd, timeout=600)
         finally:
             gate.reopen()
+        if res.ok:
+            from .workers import pool
+            if pool is not None:
+                pool.recycle()  # les workers rechargeront la nouvelle version
         after = versions()
         changed = {k: [before[k], after[k]] for k in after if before.get(k) != after.get(k)}
         result = {"ok": res.ok, "changed": changed, "versions": after,

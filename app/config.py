@@ -42,6 +42,8 @@ class Settings:
     # pour éviter le SSRF sur une instance publique).
     allow_private_urls: bool = False
     max_concurrent_jobs: int = 4
+    # processus yt-dlp gardés chauds pour l'analyse (0 = un processus par analyse)
+    extract_workers: int = 2
     job_ttl: int = 900  # secondes avant suppression d'un fichier téléchargé
     cache_ttl: int = 1800  # secondes de validité d'un résultat d'analyse
     max_items: int = 50  # nombre max d'éléments d'un carrousel / playlist
@@ -70,6 +72,7 @@ class Settings:
             port=_int("PORT", 9000),
             allow_private_urls=_bool("ALLOW_PRIVATE_URLS", False),
             max_concurrent_jobs=max(1, _int("MAX_CONCURRENT_JOBS", 4)),
+            extract_workers=max(0, _int("EXTRACT_WORKERS", 2)),
             job_ttl=_int("JOB_TTL", 900),
             cache_ttl=_int("CACHE_TTL", 1800),
             max_items=max(1, _int("MAX_ITEMS", 50)),

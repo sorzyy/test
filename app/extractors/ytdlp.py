@@ -10,6 +10,7 @@ from ..errors import classify, last_error_line
 from ..models import MediaItem
 from ..services import ServiceMatch
 from ..tools import cookies_copy, run, ytdlp_base_args
+from ..workers import pool
 from . import ExtractResult, kind_from_ext
 
 # Champs volumineux inutiles pour télécharger : on les retire du cache.
@@ -24,24 +25,23 @@ YOUTUBE_FALLBACK_ARGS = ["--extractor-args", "youtube:player_client=tv_simply,tv
 async def extract(match: ServiceMatch, extra_args: list[str] | None = None) -> ExtractResult:
     with cookies_copy() as cookies:
         # les avertissements restent dans stderr : ils expliquent un échec
-        cmd = ytdlp_base_args(cookies, warnings=True) + (extra_args or []) + [
-            "-J", "--playlist-end", str(settings.max_items)]
+        args = ytdlp_base_args(cookies, warnings=True) + (extra_args or []) + [
+            "--playlist-end", str(settings.max_items)]
         if match.service == "instagram":
             # les photos d'un carrousel n'ont pas de "format" vidéo
-            cmd.append("--ignore-no-formats-error")
+            args.append("--ignore-no-formats-error")
         if match.service == "youtube" and match.kind == "playlist":
-            cmd.append("--flat-playlist")
-        cmd += ["--", match.url]
-        res = await run(cmd, settings.extract_timeout)
+            args.append("--flat-playlist")
+        args += ["--", match.url]
+        if pool is not None:
+            # processus yt-dlp déjà chaud : pas de 1,3 s de démarrage
+            data, res = await pool.extract(args[3:], settings.extract_timeout)
+        else:
+            res = await run(args[:3] + ["-J"] + args[3:], settings.extract_timeout)
+            data = _parse_json(res.stdout)
 
     if res.timed_out:
         return ExtractResult("yt-dlp", error="fetch.timeout")
-    data = None
-    if res.stdout.strip():
-        try:
-            data = json.loads(res.stdout.strip().splitlines()[-1])
-        except ValueError:
-            data = None
     if not isinstance(data, dict):
         return ExtractResult("yt-dlp", error=classify(res.stderr), detail=last_error_line(res.stderr))
     result = parse_info(data, match)
@@ -54,6 +54,15 @@ async def extract(match: ServiceMatch, extra_args: list[str] | None = None) -> E
         if result.error == "content.empty" and classify(res.stderr) != "fetch.fail":
             result.error = classify(res.stderr)
     return result
+
+
+def _parse_json(stdout: str) -> dict | None:
+    if not stdout.strip():
+        return None
+    try:
+        return json.loads(stdout.strip().splitlines()[-1])
+    except ValueError:
+        return None
 
 
 def best_thumbnail(info: dict) -> str | None:
