@@ -96,6 +96,15 @@ class Settings:
         if temp:
             s.temp_dir = Path(temp)
         cookies = _str("COOKIES_FILE")
+        content = _str("COOKIES_TXT")
+        if content and not (cookies and Path(cookies).is_file()):
+            # contenu collé dans une variable d'environnement (hébergeurs sans fichiers)
+            path = Path(tempfile.gettempdir()) / "saphir-cookies.txt"
+            text = content.replace("\\t", "\t").replace("\\n", "\n")
+            if not text.startswith("# Netscape"):
+                text = "# Netscape HTTP Cookie File\n" + text
+            path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+            cookies = str(path)
         if cookies is None and Path("cookies.txt").is_file():
             cookies = "cookies.txt"
         if cookies:

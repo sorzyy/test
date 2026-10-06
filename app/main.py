@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__, jobs, resolver, updater, workers
+from . import __version__, jobs, resolver, streaming, updater, workers
 from .config import settings
 from .errors import AppError
 from .formats import Options
@@ -157,6 +157,41 @@ def _file_response(job: jobs.Job) -> FileResponse:
                                            "Cache-Control": "no-store"})
 
 
+async def _stream_or_job(resolved, selection, opts: Options):
+    """Flux direct si possible (démarrage immédiat), sinon téléchargement classique puis envoi."""
+    targets = jobs._targets(resolved, selection, opts)
+    if selection != "all" and len(targets) == 1:
+        item = targets[0]
+        try:
+            plan = await streaming.plan(item, opts, resolved.service)
+            if plan:
+                stream = await streaming.open_stream(plan)
+                index = resolved.items.index(item) if item in resolved.items else None
+                multiple = len(resolved.items) > 1 and index is not None
+                filename = jobs.build_filename(resolved, item, plan.ext, index if multiple else None)
+                headers = {"Content-Disposition": _attachment(filename), "Cache-Control": "no-store",
+                           "X-Saphir-Path": "stream"}
+                if stream.length:
+                    headers["Content-Length"] = str(stream.length)
+                return StreamingResponse(stream.body(), media_type=plan.media_type, headers=headers)
+        except AppError as err:
+            if err.code == "content.too_big":
+                raise
+            log.info("flux direct impossible (%s) : téléchargement classique", err.detail or err.code)
+    job = jobs.create_job(resolved, selection, opts)
+    await job.done_event.wait()
+    if job.status != "done":
+        raise job.error or AppError("download.fail")
+    return _file_response(job)
+
+
+@app.get("/api/stream/{token}/{index}", dependencies=[Depends(require_key)])
+async def api_stream(token: str, index: str, o: str = ""):
+    resolved = resolver.get(token)
+    selection: Union[int, str] = index if index in ("audio", "all") else int(index) if index.isdigit() else "invalid"
+    return await _stream_or_job(resolved, selection, _decode_opts(o))
+
+
 @app.get("/api/jobs/{job_id}/file")
 async def api_job_file(job_id: str):
     return _file_response(jobs.get_job(job_id))
@@ -233,6 +268,7 @@ _COBALT_ERRORS = {
     "link.invalid": "error.api.link.invalid", "link.empty": "error.api.link.missing",
     "link.unsupported": "error.api.link.unsupported", "link.private": "error.api.link.invalid",
     "content.private": "error.api.content.post.private", "content.login": "error.api.content.post.private",
+    "content.login.instagram": "error.api.content.post.private",
     "content.age": "error.api.content.post.age", "content.geo": "error.api.content.video.region",
     "content.unavailable": "error.api.content.video.unavailable", "content.live": "error.api.content.video.live",
     "content.too_long": "error.api.content.too_long", "content.empty": "error.api.fetch.empty",
@@ -330,12 +366,10 @@ async def cobalt_api(request: Request):
 async def cobalt_tunnel(t: str, i: str, o: str = ""):
     resolved = resolver.get(t)
     selection: Union[int, str] = i if i in ("audio", "all") else int(i) if i.isdigit() else "invalid"
-    job = jobs.create_job(resolved, selection, _decode_opts(o))
-    await job.done_event.wait()
-    if job.status != "done":
-        err = job.error or AppError("download.fail")
-        return JSONResponse({"error": err.to_dict()}, status_code=502)
-    return _file_response(job)
+    try:
+        return await _stream_or_job(resolved, selection, _decode_opts(o))
+    except AppError as err:
+        return JSONResponse({"error": err.to_dict()}, status_code=502 if err.status < 500 else err.status)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

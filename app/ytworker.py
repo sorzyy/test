@@ -37,6 +37,26 @@ class _Collector:
         return "\n".join(self.lines)
 
 
+_FORMAT_KEYS = ("format_id", "url", "protocol", "ext", "vcodec", "acodec", "http_headers", "cookies",
+                "width", "height", "filesize", "filesize_approx", "tbr")
+
+
+def select(yt_dlp, info: dict, args: list[str]) -> dict:
+    """Choisit les formats (mêmes options -f / -S que la ligne de commande) sans télécharger."""
+    log = _Collector()
+    try:
+        opts = dict(yt_dlp.parse_options(args).ydl_opts)
+        opts.update(logger=log, quiet=True, noprogress=True, simulate=True)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            result = ydl.process_ie_result(dict(info), download=False)
+            chosen = result.get("requested_formats") or [result]
+            formats = [{k: f.get(k) for k in _FORMAT_KEYS} for f in chosen]
+            return {"ok": True, "formats": formats, "ext": result.get("ext"), "stderr": log.text()}
+    except BaseException as exc:
+        log.error(str(exc))
+        return {"ok": False, "stderr": log.text()}
+
+
 def handle(yt_dlp, args: list[str]) -> dict:
     log = _Collector()
     try:
@@ -73,7 +93,10 @@ def main() -> None:
             req = json.loads(line)
         except ValueError:
             continue
-        res = handle(yt_dlp, req.get("args") or [])
+        if req.get("op") == "select":
+            res = select(yt_dlp, req.get("info") or {}, req.get("args") or [])
+        else:
+            res = handle(yt_dlp, req.get("args") or [])
         res["id"] = req.get("id")
         proto.write(json.dumps(res, ensure_ascii=False) + "\n")
         proto.flush()

@@ -54,6 +54,8 @@ Clique le bouton, connecte-toi avec GitHub, puis valide. Render construit l'imag
 - mets l'adresse Render dans `deploy/api-url.txt` et pousse : le workflow *GitHub Pages* publie la page
 - s'il échoue à la première publication : *Settings → Pages → Build and deployment → Source : GitHub Actions*, puis relance le workflow
 
+**Instagram sur Render** : Instagram bloque les visiteurs non connectés sur beaucoup de reels récents quand la demande vient d'un serveur. Ajoute les cookies d'un compte (un compte secondaire de préférence) : exporte `cookies.txt` (voir plus bas), ouvre-le dans un éditeur de texte, copie tout, et colle-le dans la variable `COOKIES_TXT` (Render → ton service → *Environment*). Le service redémarre et les reels passent.
+
 À savoir : sur un hébergeur (Render ou autre), YouTube bloque la plupart des IP de datacenter. Pour YouTube, ajoute des cookies (variable `COOKIES_FILE` via un *Secret File* Render) ou garde une instance chez toi. Instagram, X et TikTok marchent sans réglage, mais un `cookies.txt` Instagram reste conseillé pour un usage régulier.
 
 ## Débloquer Instagram (et le contenu réservé aux membres) : les cookies
@@ -79,6 +81,7 @@ Tout se règle par variables d'environnement (dans `docker-compose.yml`) :
 |---|---|---|
 | `PORT` | `9000` | port HTTP |
 | `COOKIES_FILE` | `cookies.txt` s'il existe | fichier cookies au format Netscape |
+| `COOKIES_TXT` | — | le **contenu** du cookies.txt, collé dans une variable (pratique sur Render) |
 | `COOKIES_FROM_BROWSER` | — | sans Docker : lit les cookies d'un navigateur installé (`firefox`, `chrome`, `edge`, `brave`…) |
 | `POT_PROVIDER_URL` | — | serveur bgutil pour les PO tokens YouTube (`http://bgutil:4416` dans le compose) |
 | `AUTO_UPDATE` | `1` | met à jour yt-dlp / gallery-dl tout seul |
@@ -87,6 +90,7 @@ Tout se règle par variables d'environnement (dans `docker-compose.yml`) :
 | `API_KEY` | — | protège l'instance : clé à saisir dans les réglages de l'interface |
 | `RATE_LIMIT_PER_MINUTE` | `30` | analyses par minute et par IP (`0` = illimité) |
 | `MAX_CONCURRENT_JOBS` | `4` | téléchargements simultanés |
+| `EXTRACT_WORKERS` | `2` | processus yt-dlp gardés en mémoire pour des analyses rapides (`0` = désactivé) |
 | `MAX_DURATION` | `0` | durée max d'une vidéo en secondes (`0` = illimité) |
 | `MAX_FILESIZE_MB` | `0` | taille max d'un fichier (`0` = illimité) |
 | `MAX_ITEMS` | `50` | éléments max d'un carrousel / d'une playlist |
@@ -132,7 +136,10 @@ Pour chaque lien, saphir détecte la plateforme et essaie plusieurs moteurs, du 
 - **X / Twitter** : yt-dlp et l'API syndication en parallèle, puis fxtwitter, puis gallery-dl. Les photos gardent leur ordre et les vidéos passent par yt-dlp pour le choix de qualité.
 - **TikTok** : yt-dlp et l'extracteur natif en parallèle (vidéos sans filigrane, diaporamas avec musique), puis gallery-dl
 
-Le fichier est préparé sur le serveur (fusion vidéo + audio, conversion avec ffmpeg), puis envoyé au navigateur et supprimé au bout de 15 minutes.
+Pour aller vite :
+- **yt-dlp reste chargé en mémoire** (processus permanents, recyclés après chaque mise à jour) : une analyse économise ~1,3 s de démarrage ;
+- **le fichier part en flux direct**, comme avec Cobalt : le serveur relaie les octets au navigateur dès qu'ils arrivent, en fusionnant vidéo + audio ou en convertissant en mp3 à la volée avec ffmpeg, sans fichier temporaire ni attente ;
+- pour YouTube et les archives zip, le fichier est préparé sur le serveur, puis envoyé et supprimé au bout de 15 minutes.
 
 ```
 app/

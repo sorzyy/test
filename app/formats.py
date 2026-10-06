@@ -59,10 +59,18 @@ def ytdlp_format_args(opts: Options) -> list[str]:
     return ["-f", fmt, "-S", ",".join(sort), "--merge-output-format", merge]
 
 
+def audio_bitrate(opts: Options) -> str:
+    """Débit pour ffmpeg ; libopus refuse plus de 256 kb/s."""
+    kbps = int(opts.audio_bitrate)
+    if opts.audio_format == "opus":
+        kbps = min(kbps, 256)
+    return f"{kbps}k"
+
+
 def ffmpeg_audio_args(opts: Options, src_ext: str | None) -> tuple[list[str], str]:
     """Arguments ffmpeg pour convertir en audio (hors "best", géré à part). Renvoie (args, extension)."""
     fmt = opts.audio_format
-    br = f"{opts.audio_bitrate}k"
+    br = audio_bitrate(opts)
     if fmt == "mp3":
         return ["-vn", "-c:a", "libmp3lame", "-b:a", br], "mp3"
     if fmt == "m4a":

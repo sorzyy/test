@@ -35,9 +35,9 @@ class _Worker:
     def alive(self) -> bool:
         return self.proc is not None and self.proc.returncode is None
 
-    async def call(self, req_id: int, args: list[str], timeout: float) -> dict:
+    async def call(self, req_id: int, args: list[str], timeout: float, **extra) -> dict:
         assert self.proc and self.proc.stdin and self.proc.stdout
-        self.proc.stdin.write((json.dumps({"id": req_id, "args": args}) + "\n").encode())
+        self.proc.stdin.write((json.dumps({"id": req_id, "args": args, **extra}) + "\n").encode())
         await self.proc.stdin.drain()
         line = await asyncio.wait_for(self.proc.stdout.readline(), timeout)
         if not line:
@@ -123,6 +123,21 @@ class WorkerPool:
         await asyncio.gather(*(w.proc.wait() for w in workers if w.proc), return_exceptions=True)
         self._idle = None
         self._loop = None
+
+    async def select_formats(self, info: dict, args: list[str], timeout: float = 20) -> list[dict] | None:
+        """Formats que yt-dlp choisirait pour ces options (URL + en-têtes), sans rien télécharger."""
+        queue = self._queue()
+        worker = await queue.get()
+        try:
+            await self._ensure(worker)
+            res = await worker.call(next(self._ids), args, timeout, op="select", info=info)
+            return res.get("formats") if res.get("ok") else None
+        except Exception as exc:
+            log.warning("sélection de format impossible : %s", exc)
+            worker.kill()
+            return None
+        finally:
+            queue.put_nowait(worker)
 
     def shutdown(self) -> None:
         if self._idle is None:

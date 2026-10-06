@@ -12,6 +12,9 @@ MESSAGES = {
     "content.private": "Ce contenu est privé ou nécessite d'être connecté.",
     "content.login": "La plateforme demande une connexion pour ce contenu. "
                      "Ajoute un fichier cookies.txt (voir le README) pour débloquer.",
+    "content.login.instagram": "Instagram bloque ce post pour les visiteurs non connectés (fréquent sur les "
+                               "reels récents, surtout depuis un serveur). Ajoute les cookies d'un compte "
+                               "Instagram : variable COOKIES_TXT ou fichier cookies.txt (2 min, voir le README).",
     "content.age": "Ce contenu est soumis à une restriction d'âge : un fichier cookies.txt d'un compte connecté est nécessaire.",
     "content.geo": "Ce contenu n'est pas disponible dans le pays du serveur.",
     "content.unavailable": "Ce contenu n'existe pas ou a été supprimé.",

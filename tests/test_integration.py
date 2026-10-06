@@ -170,3 +170,54 @@ def test_audio_mode_on_silent_video(client, media_server):
         time.sleep(0.2)
         job = client.get(f"/api/jobs/{job['id']}").json()
     assert job["status"] == "error" and job["error"]["code"] == "content.no_audio"
+
+
+def _encode(options: dict) -> str:
+    import base64
+    from app.formats import Options
+    return base64.urlsafe_b64encode(Options(**options).model_dump_json().encode()).decode().rstrip("=")
+
+
+@pytest.mark.parametrize("path,options,expected,direct", [
+    ("clip.mp4", {}, [("video", "h264"), ("audio", "aac")], True),
+    ("clip.mp4", {"mode": "audio"}, [("audio", "mp3")], True),
+    ("clip.mp4", {"mode": "audio", "audio_format": "opus", "audio_bitrate": "320"}, [("audio", "opus")], True),
+    ("clip.mp4", {"mode": "mute"}, [("video", "h264")], True),
+    ("photo.jpg", {}, [("video", "mjpeg")], True),
+    # flux DASH segmenté : pas de flux direct, repli sur le téléchargement classique
+    ("dash/manifest.mpd", {}, [("video", "h264"), ("audio", "aac")], False),
+])
+def test_stream_endpoint(client, media_server, tmp_path, path, options, expected, direct):
+    res = client.post("/api/resolve", json={"url": f"{media_server}/{path}"}).json()
+    r = client.get(f"/api/stream/{res['token']}/0?o={_encode(options)}")
+    assert r.status_code == 200, r.text[:300]
+    assert ("x-saphir-path" in r.headers) == direct
+    assert "attachment" in r.headers["content-disposition"]
+    assert _streams(r.content, tmp_path) == expected
+
+
+def test_stream_direct_item_fallback_url(client, media_server, tmp_path):
+    from app import resolver
+    from app.models import MediaItem, Resolved
+    item = MediaItem(type="video", source="direct", url=f"{media_server}/dead.mp4",
+                     fallback_urls=[f"{media_server}/clip.mp4"], ext="mp4", title="secours")
+    token = resolver.store(Resolved(service="tiktok", url="u", title="t", items=[item]))
+    r = client.get(f"/api/stream/{token}/0")
+    assert r.status_code == 200 and r.headers["x-saphir-path"] == "stream"
+    assert 'filename="secours.mp4"' in r.headers["content-disposition"]
+    assert _streams(r.content, tmp_path) == [("video", "h264"), ("audio", "aac")]
+
+
+def test_stream_dead_source_returns_error(client, media_server):
+    from app import resolver
+    from app.models import MediaItem, Resolved
+    item = MediaItem(type="photo", source="direct", url=f"{media_server}/nope.jpg", ext="jpg")
+    token = resolver.store(Resolved(service="generic", url="u", title="t", items=[item]))
+    r = client.get(f"/api/stream/{token}/0")
+    assert r.status_code >= 400 and r.json()["error"]["code"]
+
+
+def test_opus_at_default_bitrate(client, media_server, tmp_path):
+    # 320 kb/s par défaut : libopus plafonne à 256, les deux chemins doivent marcher
+    job, r = _download(client, f"{media_server}/clip.mp4", mode="audio", audio_format="opus", audio_bitrate="320")
+    assert _streams(r.content, tmp_path) == [("audio", "opus")]

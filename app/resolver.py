@@ -104,13 +104,16 @@ async def _instagram(match: ServiceMatch) -> Resolved:
     y = await ytdlp.extract(match)
     if y.ok:
         return _finish(match, y, [y])
-    n = await instagram.extract(match)
+    # yt-dlp a échoué : les deux autres méthodes en même temps plutôt qu'à la suite
+    n, g = await asyncio.gather(instagram.extract(match), gallerydl.extract(match.url))
     if n.ok:
         return _finish(match, n, [n])
-    g = await gallerydl.extract(match.url)
     if g.ok:
         return _finish(match, g, [g])
-    raise _fail([y, n, g])
+    err = _fail([y, n, g])
+    if err.code == "content.login":
+        err.code = "content.login.instagram"
+    raise err
 
 
 async def _twitter(match: ServiceMatch) -> Resolved:

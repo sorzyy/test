@@ -175,3 +175,15 @@ def test_format_args():
     assert ytdlp_format_args(Options(mode="mute"))[1] == "bv/bv*/b"
     assert ytdlp_format_args(Options(mode="audio", audio_format="ogg")) == ["-f", "ba/b"]
     assert Options(quality="9999", audio_format="flac", audio_bitrate="1").model_dump()["quality"] == "1080"
+
+
+def test_instagram_login_error_is_specific(monkeypatch, no_network):
+    async def fail(code):
+        return ExtractResult("x", error=code)
+
+    monkeypatch.setattr(resolver.ytdlp, "extract", lambda m: fail("content.login"))
+    monkeypatch.setattr(resolver.instagram, "extract", lambda m: fail("content.login"))
+    monkeypatch.setattr(resolver.gallerydl, "extract", lambda u, options=None: fail("fetch.fail"))
+    with pytest.raises(AppError) as exc:
+        run(resolver.resolve("https://www.instagram.com/reel/DZLNSwDxac6/?stkn=abc"))
+    assert exc.value.code == "content.login.instagram" and "COOKIES_TXT" in exc.value.message

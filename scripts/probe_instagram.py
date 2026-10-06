@@ -24,7 +24,10 @@ def main(code: str, kind: str = "reel") -> None:
         h = r.text
         print(f"embed: {r.status_code} len={len(h)} video_url={'video_url' in h} display_url={'display_url' in h} "
               f"contextJSON={'contextJSON' in h} gql_data={'gql_data' in h} EmbeddedMediaImage={'EmbeddedMediaImage' in h}")
-        for m in re.findall(r'.{80}video_url.{160}', h)[:2]:
+        for marker in ("video_versions", "playback_url", ".mp4", "dash_manifest", "xdt_", "is_video",
+                       "image_versions2", "login", "EmbedIsBroken", "data-media-type", "Watch on Instagram"):
+            print(f"    {marker!r}: {h.count(marker)}")
+        for m in re.findall(r'.{60}(?:video_versions|\.mp4).{120}', h)[:3]:
             print("   ", m)
         for host in MIRRORS:
             for ua in (UA_BOT, UA_TG):

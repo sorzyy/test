@@ -149,14 +149,68 @@
     }
   }
 
+  const b64url = (text) => btoa(unescape(encodeURIComponent(text))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  function filenameFrom(disposition) {
+    const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition || "");
+    if (star) { try { return decodeURIComponent(star[1]); } catch { /* nom mal encodé */ } }
+    const plain = /filename="([^"]+)"/i.exec(disposition || "");
+    return plain ? plain[1] : "saphir";
+  }
+
+  // Flux direct : le serveur relaie le fichier pendant qu'il le récupère, le
+  // téléchargement démarre tout de suite et la progression est réelle.
+  async function streamDownload(index) {
+    const headers = prefs.api_key ? { Authorization: "Api-Key " + prefs.api_key } : {};
+    const url = apiUrl(`/api/stream/${current.token}/${index}?o=${b64url(JSON.stringify(options()))}`);
+    showStatus("préparation…", "", null);
+    let res;
+    try {
+      res = await fetch(url, { headers });
+    } catch {
+      throw { message: "Impossible de joindre le serveur saphir." };
+    }
+    if (!res.ok) {
+      let data = null;
+      try { data = await res.json(); } catch { /* pas de JSON */ }
+      throw (data && data.error) || { message: `Erreur serveur (${res.status}).` };
+    }
+    const filename = filenameFrom(res.headers.get("content-disposition"));
+    const total = Number(res.headers.get("content-length")) || 0;
+    const reader = res.body.getReader();
+    const chunks = [];
+    let received = 0;
+    const started = performance.now();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.length;
+      const speed = received / Math.max((performance.now() - started) / 1000, 0.001);
+      const meta = [fmtBytes(received) + (total ? ` / ${fmtBytes(total)}` : ""), `${fmtBytes(speed)}/s`].join(" · ");
+      showStatus("téléchargement…", meta, total ? (received / total) * 100 : null);
+    }
+    const blob = new Blob(chunks, { type: res.headers.get("content-type") || "application/octet-stream" });
+    const objectUrl = URL.createObjectURL(blob);
+    save(objectUrl, filename);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    showStatus(`✓ ${filename}`, fmtBytes(received), 100);
+  }
+
   async function download(index, tile) {
     const label = index === "all" ? "préparation de l'archive…" : "téléchargement…";
     showStatus(label, "", 0);
     if (tile) tile.classList.add("busy");
     try {
+      // YouTube (fichiers lourds) et archives : téléchargement préparé sur le serveur
+      if (index !== "all" && current.service !== "youtube") {
+        await streamDownload(index);
+        if (tile) tile.classList.add("done");
+        return;
+      }
       let job = await api("/api/jobs", { token: current.token, index, options: options() });
       while (job.status !== "done" && job.status !== "error") {
-        await new Promise((r) => setTimeout(r, 450));
+        await new Promise((r) => setTimeout(r, 300));
         job = await api(`/api/jobs/${job.id}`);
         const phase = job.status === "processing" ? "conversion…" : (job.phase ? `téléchargement ${job.phase}…` : "téléchargement…");
         const meta = [job.speed ? `${fmtBytes(job.speed)}/s` : "", job.progress != null ? `${Math.round(job.progress)}%` : ""]

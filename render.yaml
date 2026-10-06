@@ -18,3 +18,6 @@ services:
         value: "500"
       - key: CORS_ORIGINS
         value: "https://sorzyy.github.io"
+      # contenu de ton cookies.txt Instagram (optionnel, mais conseillé : voir le README)
+      - key: COOKIES_TXT
+        sync: false
