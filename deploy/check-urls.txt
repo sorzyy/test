@@ -1,0 +1,2 @@
+# liens testés par la CI à chaque push (une URL par ligne)
+https://www.instagram.com/reel/DZLNSwDxac6/?stkn=MWttMmxndHh0bDI3aA==

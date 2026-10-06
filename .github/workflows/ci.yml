@@ -69,6 +69,12 @@ jobs:
           done
           python -m yt_dlp -F "https://www.tiktok.com/@memezar/video/7449708266168274208" 2>&1 | tail -15
           python -m yt_dlp -F "https://www.instagram.com/reel/Chunk8-jurw/" 2>&1 | tail -15
+      - name: diagnostic des liens de deploy/check-urls.txt
+        continue-on-error: true
+        run: |
+          grep -v '^#' deploy/check-urls.txt | while read -r u; do
+            [ -n "$u" ] && echo "=== $u" && python scripts/check_url.py "$u" 2>&1 | tail -30
+          done
       - run: pytest -m live -v -s -rA
         env:
           RUN_LIVE: "1"

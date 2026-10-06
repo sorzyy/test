@@ -28,6 +28,7 @@ CASES = [
     ("instagram-video-post", "https://www.instagram.com/p/Bqxp0VSBgJg/", ["video"], "auto"),
     ("instagram-photo", "https://www.instagram.com/p/BqvsDleB3lV/", ["photo"], "auto"),
     ("instagram-carousel", "https://www.instagram.com/p/BoHk1haB5tM/", None, "auto"),
+    ("instagram-reel-recent", "https://www.instagram.com/reel/DZLNSwDxac6/?stkn=MWttMmxndHh0bDI3aA==", ["video"], "auto"),
     ("instagram-audio", "https://www.instagram.com/p/Bqxp0VSBgJg/", ["video"], "audio"),
     ("twitter-video", "https://x.com/historyinmemes/status/1790637656616943991", ["video"], "auto"),
     ("twitter-video-audio", "https://x.com/historyinmemes/status/1790637656616943991", ["video"], "audio"),
