@@ -55,9 +55,12 @@ def client(tmp_path_factory):
 def test_live(client, name, url, expected, mode):
     started = time.time()
     res = client.post("/api/resolve", json={"url": url}).json()
-    if res.get("error", {}).get("code") == "fetch.bot":
+    code = res.get("error", {}).get("code")
+    if code == "fetch.bot":
         # IP de datacenter bloquée par la plateforme : pas un bug de saphir
         pytest.skip(f"{name}: IP du runner bloquée (anti-bot)")
+    if code == "content.login.instagram" and not os.environ.get("COOKIES_TXT"):
+        pytest.skip(f"{name}: Instagram exige une connexion pour ce post (cookies requis)")
     assert "error" not in res, f"{name}: {res.get('error')}"
     types = [i["type"] for i in res["items"]]
     print(f"\n[{name}] engines={res['engines']} items={types} audio={bool(res['audio'])} "
