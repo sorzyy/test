@@ -1,0 +1,7 @@
+# Captures brutes REA : elles contiennent le code JS de brandsearch.co.
+# On ne les versionne pas ; ./scripts/reverse.sh les régénère.
+analysis/*/scripts/
+analysis/*/inspect.json
+analysis/*/export.json
+analysis/*/screenshot.json
+analysis/*/targets.json
