@@ -48,6 +48,13 @@ final class GlassesController {
   var maxNew: Int = (UserDefaults.standard.object(forKey: "maxNew") as? Int) ?? 2 {
     didSet { UserDefaults.standard.set(maxNew, forKey: "maxNew") }
   }
+  /// Mode direct : avec une clé Gemini, l'app appelle Gemini elle-même (pas de serveur).
+  var geminiKey: String = KeyStore.load() {
+    didSet { KeyStore.save(geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)) }
+  }
+  var geminiModel: String = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-3.5-flash" {
+    didSet { UserDefaults.standard.set(geminiModel, forKey: "geminiModel") }
+  }
 
   var isStreaming: Bool { streamState == .streaming }
   var isRegistered: Bool { registrationState == .registered }
@@ -266,6 +273,8 @@ final class GlassesController {
     } catch {
       NSLog("[Laoshi] Bouton des lunettes indisponible : \(error)")
     }
+    #else
+    #warning("MWDATInputs absent : le bouton photo des lunettes est désactivé")
     #endif
   }
 
@@ -346,6 +355,7 @@ final class GlassesController {
       if !text.isEmpty { await self.ask(text) }
     }
     #else
+    #warning("MWDATSpeech absent : les questions à voix haute sont désactivées")
     report("Ajoute le module MWDATSpeech au projet pour poser des questions à voix haute.")
     #endif
   }
@@ -372,6 +382,10 @@ final class GlassesController {
   // MARK: 5. Le prof
 
   private var client: TutorClient { TutorClient(serverURL: serverURL, token: token) }
+  private var direct: GeminiTutor? {
+    let key = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    return key.isEmpty ? nil : GeminiTutor(apiKey: key, model: geminiModel)
+  }
 
   /// Question orale : « que veut dire siège en chinois ? ».
   /// On joint la dernière image des lunettes, pour « c'est quoi ça en chinois ? ».
@@ -381,13 +395,15 @@ final class GlassesController {
     speaker.stop()
     defer { isThinking = false }
     do {
-      let result = try await client.ask(
-        question: question,
-        jpeg: isStreaming ? latestFrame.jpeg() : nil,
-        level: level,
-        known: vocabulary.known,
-        learning: vocabulary.learning
-      )
+      let image = isStreaming ? latestFrame.jpeg() : nil
+      let result: AskResult
+      if let direct {
+        result = try await direct.ask(
+          question: question, jpeg: image, level: level, known: vocabulary.known, learning: vocabulary.learning)
+      } else {
+        result = try await client.ask(
+          question: question, jpeg: image, level: level, known: vocabulary.known, learning: vocabulary.learning)
+      }
       vocabulary.record(result.words)
       lastAnswer = result
       lastResult = nil
@@ -416,14 +432,16 @@ final class GlassesController {
       return
     }
     do {
-      let result = try await client.scan(
-        jpeg: jpeg,
-        level: level,
-        maxNew: maxNew,
-        known: vocabulary.known,
-        learning: vocabulary.learning,
-        challenge: challenge
-      )
+      let result: ScanResult
+      if let direct {
+        result = try await direct.scan(
+          jpeg: jpeg, level: level, maxNew: maxNew, known: vocabulary.known, learning: vocabulary.learning,
+          challenge: challenge)
+      } else {
+        result = try await client.scan(
+          jpeg: jpeg, level: level, maxNew: maxNew, known: vocabulary.known, learning: vocabulary.learning,
+          challenge: challenge)
+      }
       vocabulary.record(result.words)
       if let challenge, result.challenge?.found == true {
         vocabulary.grade(challenge, good: true)

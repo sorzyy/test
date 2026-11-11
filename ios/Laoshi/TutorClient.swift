@@ -25,7 +25,8 @@ struct Word: Codable, Hashable, Identifiable {
   let example: Sentence
   let tip: String
   let status: String  // new | review | known
-  let pinyinCheck: PinyinCheck
+  /// Vérification du pinyin par dictionnaire (seulement via le serveur).
+  let pinyinCheck: PinyinCheck?
 }
 
 struct ChallengeResult: Codable, Hashable {

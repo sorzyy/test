@@ -196,8 +196,8 @@ struct WordCard: View {
           .foregroundStyle(word.status == "new" ? .white : .primary)
       }
       Text(word.fr).font(.headline) + Text(word.where.isEmpty ? "" : "  · \(word.where)").foregroundStyle(.secondary)
-      if !word.pinyinCheck.ok {
-        Text("⚠ Pinyin à vérifier — dictionnaire : \(word.pinyinCheck.dictionary)")
+      if let check = word.pinyinCheck, !check.ok {
+        Text("⚠ Pinyin à vérifier — dictionnaire : \(check.dictionary)")
           .font(.caption).foregroundStyle(.orange)
       }
       Text("\(word.measure.zh) · \(word.measure.pinyin)").font(.subheadline)
@@ -245,10 +245,24 @@ struct SettingsView: View {
   var body: some View {
     NavigationStack {
       Form {
-        Section("Serveur du prof") {
+        Section {
+          SecureField("Clé API Gemini", text: $glasses.geminiKey)
+            .textInputAutocapitalization(.never).autocorrectionDisabled()
+          TextField("Modèle", text: $glasses.geminiModel)
+            .textInputAutocapitalization(.never).autocorrectionDisabled()
+        } header: {
+          Text("Mode direct (recommandé)")
+        } footer: {
+          Text("Avec une clé Gemini, l'app parle directement à Gemini : pas de serveur. La clé reste dans le trousseau de ton iPhone. Laisse vide pour utiliser ton serveur.")
+        }
+        Section {
           TextField("https://mon-serveur.onrender.com", text: $glasses.serverURL)
             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
           SecureField("Jeton d'accès (optionnel)", text: $glasses.token)
+        } header: {
+          Text("Ou : ton serveur")
+        } footer: {
+          Text("Utilisé seulement sans clé Gemini. Avantage : le pinyin y est vérifié avec un dictionnaire.")
         }
         Section("Apprentissage") {
           Picker("Niveau", selection: $glasses.level) {
