@@ -14,6 +14,18 @@ Compte environ 30 minutes la première fois. Ensuite, l'app reste sur ton iPhone
 > Avec un Apple ID gratuit, l'app installée expire au bout de **7 jours** : il suffit de rebrancher l'iPhone
 > et de relancer depuis Xcode (étape 5). Avec un compte Apple Developer payant, elle tient un an.
 
+## Raccourci : installer l'IPA toute faite (sans Xcode)
+
+Une IPA est fabriquée automatiquement à chaque modification :
+**https://github.com/sorzyy/test/releases/tag/ipa-latest** (fichier `Laoshi.ipa`).
+
+- Installe-la avec **SideStore**, **AltStore** ou **Sideloadly** : ils la signent avec ton Apple ID et
+  l'installent comme une vraie app. ✅ Les lunettes fonctionnent.
+- **Pas dans LiveContainer** : l'app tourne, mais iOS ne voit pas ses déclarations (retour depuis Meta AI,
+  protocole Bluetooth des lunettes). La connexion aux lunettes échoue. ❌
+
+Ensuite, fais l'étape 1 (mode développeur dans Meta AI) puis l'étape 6 (premier lancement).
+
 ## 1. Activer le mode développeur
 
 - **Dans l'app Meta AI** : Paramètres › tes lunettes › **Mode développeur** → activé.
