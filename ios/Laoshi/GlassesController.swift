@@ -37,7 +37,7 @@ enum LessonMode: String, CaseIterable, Identifiable {
     switch self {
     case .look: return "Regarde un objet, le prof te dit son nom."
     case .ask: return "Pose une question : « que veut dire siège ? »"
-    case .walk: return "Une mini-leçon toutes les 15 s, sans rien toucher."
+    case .walk: return "Une mini-leçon dès que la scène change, sans rien toucher."
     case .challenge: return "Retrouve autour de toi un mot déjà appris."
     }
   }
@@ -137,6 +137,8 @@ final class GlassesController {
   /// Ce qu'on attend de Meta AI quand on l'a ouvert (autorisation, caméra, micro).
   @ObservationIgnored private var waitingForMetaAI: String?
   @ObservationIgnored private var returnCheck: Task<Void, Never>?
+  /// Empreinte de la dernière scène envoyée au prof (mode balade : on ne renvoie que si ça change).
+  @ObservationIgnored private var lastSceneSignature: [UInt8]?
   #if canImport(MWDATSpeech)
   @ObservationIgnored private var speech: Speech?
   #endif
@@ -772,17 +774,62 @@ final class GlassesController {
 
   // MARK: Mode balade : une leçon toutes les 15 s, quand le prof a fini de parler
 
+  /// Économe : on regarde toutes les 8 s, mais on n'envoie une photo au prof (une requête Gemini)
+  /// que si la scène a vraiment changé depuis la dernière leçon, et au plus toutes les 20 s.
   private func startAutoMode() {
     autoTask?.cancel()
+    lastSceneSignature = nil
     autoTask = Task { [weak self] in
+      var lastLesson = Date.distantPast
+      var waitingNoted = false
       while !Task.isCancelled {
-        try? await Task.sleep(for: .seconds(15))
+        try? await Task.sleep(for: .seconds(8))
         guard let self, !Task.isCancelled else { return }
-        if self.isStreaming, !self.isThinking, !self.isListening, !self.speaker.isSpeaking {
-          await self.scan()
+        guard self.isStreaming, !self.isThinking, !self.isListening, !self.speaker.isSpeaking,
+          Date.now.timeIntervalSince(lastLesson) >= 20
+        else { continue }
+        let signature = self.latestFrame.image().flatMap(Self.sceneSignature)
+        if let signature, let previous = self.lastSceneSignature, !Self.sceneChanged(previous, signature) {
+          if !waitingNoted {
+            waitingNoted = true
+            self.note("Balade : même scène, j'attends que tu regardes autre chose.")
+          }
+          continue
         }
+        waitingNoted = false
+        lastLesson = .now
+        self.lastSceneSignature = signature
+        await self.scan()
       }
     }
+  }
+
+  /// Image réduite à 16×16 en niveaux de gris : assez pour savoir si la scène a changé.
+  nonisolated static func sceneSignature(_ image: UIImage) -> [UInt8]? {
+    let side = 16
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let small = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+      image.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
+    }
+    guard let cgImage = small.cgImage else { return nil }
+    var pixels = [UInt8](repeating: 0, count: side * side)
+    let drawn: Bool = pixels.withUnsafeMutableBytes { buffer in
+      guard
+        let context = CGContext(
+          data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
+          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+      else { return false }
+      context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+      return true
+    }
+    return drawn ? pixels : nil
+  }
+
+  nonisolated static func sceneChanged(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+    guard a.count == b.count, !a.isEmpty else { return true }
+    let total = zip(a, b).reduce(0) { $0 + abs(Int($1.0) - Int($1.1)) }
+    return Double(total) / Double(a.count) > 14
   }
 
   private func stopAutoMode() {
@@ -813,9 +860,13 @@ final class FrameBox: @unchecked Sendable {
   }
 
   func jpeg() -> Data? {
+    image()?.jpegData(compressionQuality: 0.85)
+  }
+
+  func image() -> UIImage? {
     lock.lock()
     let current = frame
     lock.unlock()
-    return current?.makeUIImage()?.jpegData(compressionQuality: 0.85)
+    return current?.makeUIImage()
   }
 }

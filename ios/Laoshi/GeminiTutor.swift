@@ -12,7 +12,11 @@ struct GeminiTutor {
   var onFallback: (@MainActor (String) -> Void)? = nil
 
   /// Modèles de secours, essayés dans l'ordre si le premier est surchargé ou indisponible.
-  static let fallbackModels = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+  /// Chaque modèle a son propre quota gratuit : les enchaîner multiplie le nombre de leçons par jour.
+  static let fallbackModels = [
+    "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
+    "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
+  ]
 
   // MARK: API publique
 
@@ -76,6 +80,8 @@ struct GeminiTutor {
 
   private enum Attempt: Error {
     case retryable(String)
+    /// Quota atteint pour ce modèle (par minute ou pour la journée).
+    case quota(perDay: Bool)
   }
 
   private func generate<T: Decodable>(system: String, text: String, schema: String, jpeg: Data?) async throws -> T {
@@ -84,17 +90,31 @@ struct GeminiTutor {
     for candidate in Self.fallbackModels where !models.contains(candidate) { models.append(candidate) }
 
     var lastProblem = "Gemini est indisponible, réessaie."
+    var tried = 0
     for (index, candidate) in models.enumerated() {
+      if await GeminiQuota.shared.isResting(candidate) { continue }
+      tried += 1
+      await GeminiQuota.shared.countRequest()
+      let next: String? = index + 1 < models.count ? models[index + 1] : nil
       do {
         let value: T = try await generateOnce(model: candidate, system: system, text: text, schema: schema, jpeg: jpeg)
         return value
+      } catch Attempt.quota(let perDay) {
+        await GeminiQuota.shared.rest(candidate, perDay: perDay)
+        lastProblem = "Quota Gemini gratuit épuisé pour aujourd'hui sur tous les modèles. Il repart à 9 h (heure de Paris)."
+        if let next, let onFallback {
+          await onFallback("Quota atteint sur \(candidate)\(perDay ? " pour aujourd'hui" : ""), je passe à \(next).")
+        }
       } catch Attempt.retryable(let problem) {
         lastProblem = problem
-        if index + 1 < models.count, let onFallback {
-          await onFallback("Gemini surchargé (\(candidate)), j'essaie \(models[index + 1])…")
+        if let next, let onFallback {
+          await onFallback("Gemini surchargé (\(candidate)), j'essaie \(next)…")
         }
-        continue
       }
+    }
+    if tried == 0 {
+      throw TutorClientError.server(
+        "Quota Gemini gratuit épuisé sur tous les modèles. Réessaie dans une minute, ou demain à 9 h (heure de Paris) si c'est le quota du jour.")
     }
     throw TutorClientError.server(lastProblem)
   }
@@ -143,7 +163,10 @@ struct GeminiTutor {
       switch status {
       case 400, 401, 403: throw TutorClientError.server("Clé Gemini refusée. Vérifie-la dans les réglages.")
       case 404: throw Attempt.retryable("Modèle Gemini introuvable : \(model).")
-      case 429: throw Attempt.retryable("Quota Gemini atteint, réessaie dans un moment.")
+      case 429:
+        // Le message de Google précise si c'est le quota de la minute ou de la journée.
+        let body = String(decoding: data, as: UTF8.self)
+        throw Attempt.quota(perDay: body.contains("PerDay") || body.contains("per day"))
       default: throw Attempt.retryable("Gemini est indisponible (\(status)), réessaie.")
       }
     }
@@ -405,5 +428,46 @@ enum KeyStore {
     add[kSecValueData as String] = Data(key.utf8)
     add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
     SecItemAdd(add as CFDictionary, nil)
+  }
+}
+
+
+/// Quotas gratuits de Gemini : on met de côté un modèle qui a atteint sa limite,
+/// pour ne pas perdre de temps à le réessayer, et on compte les requêtes du jour.
+@MainActor
+final class GeminiQuota {
+  static let shared = GeminiQuota()
+  private var restingUntil: [String: Date] = [:]
+
+  func isResting(_ model: String) -> Bool { (restingUntil[model] ?? .distantPast) > .now }
+
+  /// Limite par minute : une minute de pause. Limite du jour : jusqu'au prochain 9 h (heure de Paris),
+  /// moment où Google remet les compteurs à zéro (minuit, heure du Pacifique).
+  func rest(_ model: String, perDay: Bool) {
+    restingUntil[model] = perDay ? Self.nextDailyReset() : .now.addingTimeInterval(65)
+  }
+
+  static func nextDailyReset() -> Date {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
+    let startOfToday = calendar.startOfDay(for: .now)
+    return calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? .now.addingTimeInterval(3600)
+  }
+
+  // MARK: Compteur du jour
+
+  private static let dayFormat: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd"
+    return f
+  }()
+
+  private var todayKey: String { "laoshi.requests." + Self.dayFormat.string(from: .now) }
+
+  var requestsToday: Int { UserDefaults.standard.integer(forKey: todayKey) }
+
+  func countRequest() {
+    UserDefaults.standard.set(requestsToday + 1, forKey: todayKey)
   }
 }

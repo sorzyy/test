@@ -83,7 +83,7 @@ struct ContentView: View {
         Text("« \(glasses.transcript) »").font(.title3).multilineTextAlignment(.center)
       }
       if glasses.mode == .walk {
-        Label(glasses.autoMode ? "Balade en cours : une leçon toutes les 15 s" : "Balade en pause", systemImage: "figure.walk")
+        Label(glasses.autoMode ? "Balade en cours : une leçon dès que la scène change" : "Balade en pause", systemImage: "figure.walk")
           .foregroundStyle(.secondary)
       }
       Button {
@@ -397,10 +397,11 @@ struct SettingsView: View {
             .textInputAutocapitalization(.never).autocorrectionDisabled()
           TextField("Modèle", text: $glasses.geminiModel)
             .textInputAutocapitalization(.never).autocorrectionDisabled()
+          LabeledContent("Requêtes Gemini aujourd'hui", value: "\(GeminiQuota.shared.requestsToday)")
         } header: {
           Text("Mode direct (recommandé)")
         } footer: {
-          Text("Avec une clé Gemini, l'app parle directement à Gemini : pas de serveur. La clé reste dans le trousseau de ton iPhone. Laisse vide pour utiliser ton serveur.")
+          Text("Avec une clé Gemini, l'app parle directement à Gemini : pas de serveur. La clé reste dans le trousseau de ton iPhone. Gratuit = quelques requêtes par minute et par jour et par modèle : si l'un est épuisé, l'app passe toute seule au suivant. Laisse vide pour utiliser ton serveur.")
         }
         Section {
           TextField("https://mon-serveur.onrender.com", text: $glasses.serverURL)
