@@ -96,23 +96,13 @@ alors déjà dans les lunettes, même avec l'appli web.
 
 ## 2. L'app iPhone pour les lunettes
 
-Prérequis : un Mac avec Xcode 26.4+, un iPhone (iOS 17.2+), l'app **Meta AI** avec tes lunettes appairées et le
-**mode développeur** activé (Meta AI › Paramètres › tes lunettes › Mode développeur).
+👉 **Guide pas à pas : [`ios/INSTALLATION.md`](ios/INSTALLATION.md)** (Mac + Xcode, environ 30 minutes la première fois).
 
-```bash
-brew install xcodegen
-cd ios
-xcodegen generate        # crée Laoshi.xcodeproj et télécharge le SDK Meta
-open Laoshi.xcodeproj
-```
+En résumé : `brew install xcodegen`, puis `cd ios && xcodegen generate && open Laoshi.xcodeproj`, puis signer avec
+ton Apple ID et lancer sur l'iPhone. Dans l'app, colle ta clé Gemini dans ⚙︎ : c'est le **mode direct**, l'app
+parle à Gemini elle-même, **sans serveur**. Le serveur reste possible (pinyin vérifié par dictionnaire).
 
-Dans Xcode : choisis ton équipe (*Signing & Capabilities*), branche ton iPhone, lance l'app (▶).
-Ensuite, dans l'app :
-
-1. ⚙︎ Réglages : renseigne l'adresse de ton serveur (et le jeton).
-2. « Connecter mes lunettes » : l'app Meta AI s'ouvre pour autoriser Lǎoshī, puis revient.
-3. « Démarrer la caméra des lunettes » : Meta AI demande l'accès à la caméra la première fois.
-4. Appuie sur **le bouton photo de la branche des lunettes** (ou sur le bouton de l'app) : le prof te répond dans les lunettes.
+L'app est compilée automatiquement sur un Mac GitHub à chaque modification (`.github/workflows/ios.yml`).
 
 ### Parler au prof : « Hey Meta, lance Lǎoshī »
 
