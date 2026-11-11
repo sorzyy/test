@@ -45,6 +45,9 @@ jobs:
           test "$(plutil -extract MWDAT.AppLinkURLScheme raw "$APP/Info.plist")" = "laoshi://"
           test "$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw "$APP/Info.plist")" = "laoshi"
           plutil -extract UISupportedExternalAccessoryProtocols.0 raw "$APP/Info.plist"
+          # Sans ces textes, iOS ferme l'app dès qu'elle demande le micro ou la reconnaissance vocale.
+          plutil -extract NSMicrophoneUsageDescription raw "$APP/Info.plist"
+          plutil -extract NSSpeechRecognitionUsageDescription raw "$APP/Info.plist"
           echo "Configuration Meta présente dans l'app ✓"
           mkdir -p Payload && cp -R "$APP" Payload/
           # Les binaires du SDK Meta sont en lecture seule : les outils de signature

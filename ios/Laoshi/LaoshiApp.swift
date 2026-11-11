@@ -27,7 +27,12 @@ struct LaoshiApp: App {
         // Retour depuis l'app Meta AI après l'enregistrement / les permissions.
         .onOpenURL { url in glasses.handleOpenURL(url) }
         .onChange(of: scenePhase) { _, phase in
-          if phase == .active { glasses.appBecameActive() }
+          if phase == .active {
+            glasses.appBecameActive()
+            glasses.vocabulary.refreshToday()
+          }
+          // Le texte du rappel (série, mots à réviser) est remis à jour en quittant l'app.
+          if phase == .background { Reminders.reschedule(vocabulary: glasses.vocabulary) }
         }
     }
   }

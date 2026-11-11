@@ -4,12 +4,16 @@ import SwiftUI
 struct ContentView: View {
   @Bindable var glasses: GlassesController
   @State private var showSettings = false
+  @State private var showReview = false
+  @State private var coach = PronunciationCoach()
+  @State private var coachMessage: String?
 
   var body: some View {
     NavigationStack {
       ScrollView {
         VStack(spacing: 20) {
           if let message = glasses.message { ErrorBanner(text: message) { glasses.message = nil } }
+          DailyBar(vocabulary: glasses.vocabulary) { showReview = true }
           StepsView(glasses: glasses)
           if glasses.running {
             runningPanel
@@ -28,6 +32,7 @@ struct ContentView: View {
           .accessibilityLabel("Réglages")
       }
       .sheet(isPresented: $showSettings) { SettingsView(glasses: glasses) }
+      .sheet(isPresented: $showReview) { ReviewView(glasses: glasses) }
     }
   }
 
@@ -120,13 +125,78 @@ struct ContentView: View {
   }
 
   @ViewBuilder private var results: some View {
+    if let word = practiceWord { practiceCard(word) }
     if let answer = glasses.lastAnswer { AnswerView(answer: answer, replay: replay) }
     if let result = glasses.lastResult { LessonView(result: result, replay: replay) }
+  }
+
+  /// Le mot à faire répéter après une leçon : le premier mot nouveau (ou à revoir).
+  private var practiceWord: Word? {
+    let words = glasses.lastAnswer?.words ?? glasses.lastResult?.words ?? []
+    return words.first { $0.status == "new" } ?? words.first { $0.status == "review" }
+  }
+
+  private func practiceCard(_ word: Word) -> some View {
+    VStack(spacing: 8) {
+      Button {
+        Task {
+          coachMessage = nil
+          glasses.speaker.stop()
+          await glasses.speaker.speak([
+            SpeechSegment(lang: "fr-FR", text: "Répète après moi :"),
+            SpeechSegment(lang: "zh-CN", text: word.hanzi, pause: 0.2),
+          ])
+          let verdict = await coach.listen(expected: word.hanzi)
+          let feedback = PronunciationCoach.feedback(verdict, word: word.hanzi, pinyin: word.pinyin)
+          coachMessage = feedback.text
+          if verdict == .perfect { glasses.vocabulary.countAction() }
+          await glasses.speaker.speak(feedback.speech)
+        }
+      } label: {
+        Label(
+          coach.isListening ? "J'écoute… dis « \(word.hanzi) »" : "Répète après moi : \(word.hanzi)",
+          systemImage: coach.isListening ? "waveform" : "mic.fill"
+        )
+        .frame(maxWidth: .infinity).padding(.vertical, 6)
+      }
+      .buttonStyle(.bordered)
+      .disabled(coach.isListening || glasses.isThinking)
+      if let coachMessage { Text(coachMessage).font(.callout).multilineTextAlignment(.center) }
+    }
   }
 
   private func replay() {
     guard let speech = glasses.lastAnswer?.speech ?? glasses.lastResult?.speech else { return }
     Task { await glasses.speaker.speak(speech) }
+  }
+}
+
+// MARK: - Objectif du jour
+
+struct DailyBar: View {
+  let vocabulary: Vocabulary
+  let review: () -> Void
+
+  var body: some View {
+    HStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
+        HStack {
+          Text("🔥 \(vocabulary.streakDays) j").font(.headline)
+          Text("Objectif \(min(vocabulary.doneToday, vocabulary.dailyGoal))/\(vocabulary.dailyGoal)")
+            .font(.subheadline).foregroundStyle(.secondary)
+        }
+        ProgressView(value: Double(min(vocabulary.doneToday, vocabulary.dailyGoal)), total: Double(max(vocabulary.dailyGoal, 1)))
+          .tint(vocabulary.doneToday >= vocabulary.dailyGoal ? .green : .accentColor)
+      }
+      Button(action: review) {
+        Label(vocabulary.due.isEmpty ? "Réviser" : "Réviser (\(vocabulary.due.count))", systemImage: "rectangle.stack.fill")
+          .font(.subheadline.bold())
+      }
+      .buttonStyle(.borderedProminent)
+      .disabled(vocabulary.cards.isEmpty)
+    }
+    .padding(12)
+    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
   }
 }
 
@@ -424,6 +494,7 @@ struct SettingsView: View {
           LabeledContent("Série", value: "🔥 \(glasses.vocabulary.streakDays) jour(s)")
           LabeledContent("À retravailler", value: "\(glasses.vocabulary.struggling.count) mot(s)")
         }
+        ReminderSection(vocabulary: glasses.vocabulary)
         Section {
           LabeledContent("Autorisation Meta AI", value: GlassesController.describe(glasses.registrationState))
           LabeledContent("Lunettes détectées", value: glasses.hasActiveDevice ? "oui" : "non")
@@ -513,5 +584,50 @@ struct VoiceSection: View {
       text += "Une voix chinoise de bonne qualité est installée ✓"
     }
     return text
+  }
+}
+
+
+// MARK: - Objectif et rappel
+
+struct ReminderSection: View {
+  let vocabulary: Vocabulary
+  @State private var enabled = Reminders.enabled
+  @State private var time = Reminders.time
+  @State private var goal = 10
+  @State private var refused = false
+
+  var body: some View {
+    Section {
+      Stepper("Objectif du jour : \(goal) actions", value: $goal, in: 3...50)
+      Toggle("Rappel quotidien", isOn: $enabled)
+      if enabled {
+        DatePicker("Heure du rappel", selection: $time, displayedComponents: .hourAndMinute)
+      }
+    } header: {
+      Text("Objectif et rappel")
+    } footer: {
+      Text(refused
+        ? "Notifications refusées : autorise-les dans Réglages de l'iPhone › Notifications › Lǎoshī."
+        : "Une action = une leçon, une réponse du prof, une carte révisée ou un défi. Le rappel te dit ta série et les mots qui t'attendent.")
+    }
+    .onAppear { goal = vocabulary.dailyGoal }
+    .onChange(of: goal) { _, value in vocabulary.dailyGoal = value }
+    .onChange(of: enabled) { _, on in
+      Task {
+        if on {
+          let granted = await Reminders.enable()
+          refused = !granted
+          if !granted { enabled = false }
+        } else {
+          Reminders.disable()
+        }
+        Reminders.reschedule(vocabulary: vocabulary)
+      }
+    }
+    .onChange(of: time) { _, value in
+      Reminders.time = value
+      Reminders.reschedule(vocabulary: vocabulary)
+    }
   }
 }

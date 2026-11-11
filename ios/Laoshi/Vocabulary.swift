@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Le vocabulaire de l'élève, avec répétition espacée (boîtes de Leitner).
 /// Mêmes règles que l'appli web : 1, 3, 7, 16, 35, 80 jours ; maîtrisé à partir de la boîte 4.
@@ -14,6 +15,11 @@ struct Card: Codable, Hashable, Identifiable {
   /// Nombre de fois où l'élève a montré qu'il l'avait oublié.
   var misses: Int? = nil
   var lastSeen: Date? = nil
+  /// De quoi réviser sans réseau : un exemple et l'astuce du prof.
+  var exampleZh: String? = nil
+  var examplePinyin: String? = nil
+  var exampleFr: String? = nil
+  var tip: String? = nil
 }
 
 /// Ce que le prof sait de l'élève, envoyé à Gemini à chaque leçon.
@@ -29,14 +35,37 @@ struct LearnerProfile {
   var streakDays: Int
 }
 
+@Observable
 @MainActor
 final class Vocabulary {
   static let intervals: [Double] = [0, 1, 3, 7, 16, 35, 80]
   static let knownBox = 4
 
   private(set) var cards: [String: Card] = [:]
-  private let key = "laoshi.deck"
-  private let daysKey = "laoshi.studyDays"
+  @ObservationIgnored private let key = "laoshi.deck"
+  @ObservationIgnored private let daysKey = "laoshi.studyDays"
+
+  // MARK: Objectif du jour
+
+  /// Actions d'apprentissage visées par jour (leçon, réponse, révision, défi).
+  var dailyGoal: Int = (UserDefaults.standard.object(forKey: "laoshi.dailyGoal") as? Int) ?? 10 {
+    didSet { UserDefaults.standard.set(dailyGoal, forKey: "laoshi.dailyGoal") }
+  }
+  /// Actions faites aujourd'hui (relu au lancement, remis à zéro chaque jour).
+  private(set) var doneToday: Int = 0
+
+  private var todayProgressKey: String { "laoshi.done." + Self.dayFormat.string(from: .now) }
+
+  /// Compte une action pour l'objectif du jour et la série.
+  func countAction() {
+    doneToday = UserDefaults.standard.integer(forKey: todayProgressKey) + 1
+    UserDefaults.standard.set(doneToday, forKey: todayProgressKey)
+    markStudiedToday()
+  }
+
+  func refreshToday() {
+    doneToday = UserDefaults.standard.integer(forKey: todayProgressKey)
+  }
 
   init() {
     if let data = UserDefaults.standard.data(forKey: key),
@@ -44,6 +73,7 @@ final class Vocabulary {
     {
       cards = decoded
     }
+    refreshToday()
   }
 
   var known: [String] { cards.values.filter { $0.box >= Self.knownBox }.map(\.hanzi) }
@@ -74,13 +104,16 @@ final class Vocabulary {
   /// Mots rencontrés dans une leçon : on ajoute les nouveaux, on note les revus.
   func record(_ words: [Word]) {
     for word in words where word.status != "known" {
-      if var card = cards[word.hanzi] {
-        card.seen += 1
-        card.lastSeen = .now
-        cards[word.hanzi] = card
-      } else {
-        cards[word.hanzi] = Card(hanzi: word.hanzi, pinyin: word.pinyin, fr: word.fr, lastSeen: .now)
+      var card = cards[word.hanzi] ?? Card(hanzi: word.hanzi, pinyin: word.pinyin, fr: word.fr, seen: 0)
+      card.seen += 1
+      card.lastSeen = .now
+      if !word.example.zh.isEmpty {
+        card.exampleZh = word.example.zh
+        card.examplePinyin = word.example.pinyin
+        card.exampleFr = word.example.fr
       }
+      if !word.tip.isEmpty { card.tip = word.tip }
+      cards[word.hanzi] = card
     }
     markStudiedToday()
     save()
@@ -119,6 +152,13 @@ final class Vocabulary {
     f.dateFormat = "yyyy-MM-dd"
     return f
   }()
+
+  /// Cartes à réviser maintenant ; s'il n'y en a pas, les moins sûres (pour réviser quand même).
+  func reviewQueue(extra: Bool) -> [Card] {
+    let dueNow = due
+    if !dueNow.isEmpty || !extra { return dueNow }
+    return cards.values.sorted { ($0.box, $0.due) < ($1.box, $1.due) }.prefix(10).map { $0 }
+  }
 
   private var studyDays: Set<String> {
     Set(UserDefaults.standard.stringArray(forKey: daysKey) ?? [])

@@ -66,6 +66,8 @@
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Pour se connecter à tes lunettes Meta.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Pour écouter ta prononciation en chinois et te corriger (exercice « Répète après moi »).</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Pour entendre tes questions au prof avec le micro des lunettes.</string>
 	<key>NSLocalNetworkUsageDescription</key>

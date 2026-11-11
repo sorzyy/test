@@ -691,6 +691,7 @@ final class GlassesController {
         vocabulary.recordForgotten(word.hanzi)
       }
       vocabulary.record(result.words)
+      vocabulary.countAction()
       lastAnswer = result
       lastResult = nil
       message = nil
@@ -739,6 +740,7 @@ final class GlassesController {
       lastResult = result
       lastAnswer = nil
       message = nil
+      vocabulary.countAction()
       if challenge == nil {
         note(result.words.isEmpty ? "Rien de nouveau ici. Rapproche-toi d'un objet." : "Leçon : " + result.words.map(\.hanzi).joined(separator: ", "), .success)
       }
