@@ -38,6 +38,10 @@ struct ChallengeResult: Codable, Hashable {
 struct SpeechSegment: Codable, Hashable {
   let lang: String  // zh-CN | fr-FR
   let text: String
+  /// Chinois lu lentement (rythme de prof : lent, puis vitesse normale).
+  var slow: Bool? = nil
+  /// Silence après ce morceau, en secondes (le temps de répéter ou de répondre).
+  var pause: Double? = nil
 }
 
 struct ScanResult: Codable {

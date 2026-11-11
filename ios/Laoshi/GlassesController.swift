@@ -104,6 +104,10 @@ final class GlassesController {
   var geminiModel: String = UserDefaults.standard.string(forKey: "geminiModel") ?? "gemini-3.5-flash" {
     didSet { UserDefaults.standard.set(geminiModel, forKey: "geminiModel") }
   }
+  /// Rythme de prof : le mot lentement puis normalement, « À toi ! » avec un silence pour répéter.
+  var teacherPace: Bool = (UserDefaults.standard.object(forKey: "teacherPace") as? Bool) ?? true {
+    didSet { UserDefaults.standard.set(teacherPace, forKey: "teacherPace") }
+  }
 
   var isStreaming: Bool { streamState == .streaming }
   var isRegistered: Bool { registrationState == .registered }
@@ -657,7 +661,10 @@ final class GlassesController {
   private var client: TutorClient { TutorClient(serverURL: serverURL, token: token) }
   private var direct: GeminiTutor? {
     let key = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-    return key.isEmpty ? nil : GeminiTutor(apiKey: key, model: geminiModel)
+    guard !key.isEmpty else { return nil }
+    return GeminiTutor(apiKey: key, model: geminiModel) { [weak self] message in
+      self?.note(message, .warning)
+    }
   }
 
   /// Question orale : « que veut dire siège en chinois ? ».
@@ -672,18 +679,22 @@ final class GlassesController {
       let image = isStreaming ? latestFrame.jpeg() : nil
       let result: AskResult
       if let direct {
-        result = try await direct.ask(
-          question: question, jpeg: image, level: level, known: vocabulary.known, learning: vocabulary.learning)
+        result = try await direct.ask(question: question, jpeg: image, profile: vocabulary.profile(level: level))
       } else {
         result = try await client.ask(
           question: question, jpeg: image, level: level, known: vocabulary.known, learning: vocabulary.learning)
+      }
+      // Redemander un mot déjà rencontré, c'est l'avoir oublié : il reviendra vite en révision.
+      for word in result.words where vocabulary.cards[word.hanzi] != nil {
+        vocabulary.recordForgotten(word.hanzi)
       }
       vocabulary.record(result.words)
       lastAnswer = result
       lastResult = nil
       message = nil
       note(result.words.isEmpty ? "Réponse du prof." : "Réponse : " + result.words.map(\.hanzi).joined(separator: ", "), .success)
-      await speaker.speak(result.speech)
+      await speaker.speak(
+        LessonVoice.ask(intro: result.intro, words: result.words, followup: result.followup, teacherPace: teacherPace))
     } catch {
       report(error.localizedDescription)
       await speaker.speak([SpeechSegment(lang: "fr-FR", text: "Désolé, je n'ai pas pu répondre.")])
@@ -711,8 +722,7 @@ final class GlassesController {
       let result: ScanResult
       if let direct {
         result = try await direct.scan(
-          jpeg: jpeg, level: level, maxNew: maxNew, known: vocabulary.known, learning: vocabulary.learning,
-          challenge: challenge)
+          jpeg: jpeg, profile: vocabulary.profile(level: level), maxNew: maxNew, challenge: challenge)
       } else {
         result = try await client.scan(
           jpeg: jpeg, level: level, maxNew: maxNew, known: vocabulary.known, learning: vocabulary.learning,
@@ -730,7 +740,9 @@ final class GlassesController {
       if challenge == nil {
         note(result.words.isEmpty ? "Rien de nouveau ici. Rapproche-toi d'un objet." : "Leçon : " + result.words.map(\.hanzi).joined(separator: ", "), .success)
       }
-      await speaker.speak(result.speech)
+      await speaker.speak(
+        LessonVoice.scan(
+          words: result.words, teacher: result.teacher, challenge: result.challenge, teacherPace: teacherPace))
     } catch {
       report(error.localizedDescription)
     }

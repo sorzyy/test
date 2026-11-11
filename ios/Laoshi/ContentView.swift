@@ -419,6 +419,8 @@ struct SettingsView: View {
           Stepper("Mots nouveaux par photo : \(glasses.maxNew)", value: $glasses.maxNew, in: 1...3)
           LabeledContent("Mots appris", value: "\(glasses.vocabulary.cards.count)")
           LabeledContent("Maîtrisés", value: "\(glasses.vocabulary.known.count)")
+          LabeledContent("Série", value: "🔥 \(glasses.vocabulary.streakDays) jour(s)")
+          LabeledContent("À retravailler", value: "\(glasses.vocabulary.struggling.count) mot(s)")
         }
         Section {
           LabeledContent("Autorisation Meta AI", value: GlassesController.describe(glasses.registrationState))
@@ -432,21 +434,82 @@ struct SettingsView: View {
         } footer: {
           Text("Si l'autorisation reste « pas encore faite » après Meta AI : \(GlassesController.devModeHelp) Ensuite, Lǎoshī doit apparaître dans Meta AI › Paramètres › Connexions d'apps › Apps en mode développeur.")
         }
-        Section {
-          Button("Tester la voix") {
-            Task {
-              await glasses.speaker.speak([
-                SpeechSegment(lang: "zh-CN", text: "你好！我是你的中文老师。"),
-                SpeechSegment(lang: "fr-FR", text: "Bonjour ! Je suis ton prof de chinois."),
-              ])
-            }
-          }
-        } footer: {
-          Text("Si la voix chinoise est absente : Réglages iPhone › Accessibilité › Contenu énoncé › Voix › Chinois.")
-        }
+        VoiceSection(speaker: glasses.speaker, teacherPace: $glasses.teacherPace)
       }
       .navigationTitle("Réglages")
       .toolbar { Button("OK") { dismiss() } }
     }
+  }
+}
+
+
+// MARK: - Réglages de la voix
+
+struct VoiceSection: View {
+  let speaker: Speaker
+  @Binding var teacherPace: Bool
+  @State private var chineseVoice = ""
+  @State private var frenchVoice = ""
+  @State private var rate: Double = 0.45
+
+  var body: some View {
+    Section {
+      Toggle("Rythme de prof", isOn: $teacherPace)
+      Picker("Voix chinoise", selection: $chineseVoice) {
+        Text("Automatique (la meilleure)").tag("")
+        ForEach(Speaker.voices(for: "zh-CN"), id: \.identifier) { voice in
+          Text("\(voice.name) · \(Speaker.qualityLabel(voice))").tag(voice.identifier)
+        }
+      }
+      Picker("Voix française", selection: $frenchVoice) {
+        Text("Automatique (la meilleure)").tag("")
+        ForEach(Speaker.voices(for: "fr-FR"), id: \.identifier) { voice in
+          Text("\(voice.name) · \(Speaker.qualityLabel(voice))").tag(voice.identifier)
+        }
+      }
+      VStack(alignment: .leading) {
+        Text("Vitesse du chinois")
+        Slider(value: $rate, in: 0.3...0.6) {
+          Text("Vitesse du chinois")
+        } minimumValueLabel: {
+          Image(systemName: "tortoise")
+        } maximumValueLabel: {
+          Image(systemName: "hare")
+        }
+      }
+      Button("🔊 Tester la voix") {
+        Task {
+          await speaker.speak([
+            SpeechSegment(lang: "fr-FR", text: "Bonjour ! Je suis ton prof de chinois. Écoute :"),
+            SpeechSegment(lang: "zh-CN", text: "椅子", slow: true, pause: 0.6),
+            SpeechSegment(lang: "zh-CN", text: "椅子"),
+            SpeechSegment(lang: "fr-FR", text: "chaise. À toi !", pause: 2.0),
+            SpeechSegment(lang: "zh-CN", text: "这是一把椅子。"),
+          ])
+        }
+      }
+    } header: {
+      Text("Voix")
+    } footer: {
+      Text(footer)
+    }
+    .onAppear {
+      chineseVoice = speaker.chineseVoiceID ?? ""
+      frenchVoice = speaker.frenchVoiceID ?? ""
+      rate = Double(speaker.chineseRate)
+    }
+    .onChange(of: chineseVoice) { _, value in speaker.chineseVoiceID = value.isEmpty ? nil : value }
+    .onChange(of: frenchVoice) { _, value in speaker.frenchVoiceID = value.isEmpty ? nil : value }
+    .onChange(of: rate) { _, value in speaker.chineseRate = Float(value) }
+  }
+
+  private var footer: String {
+    var text = "Rythme de prof : le mot lentement puis normalement, puis « À toi ! » avec un silence pour répéter. "
+    if speaker.onlyBasicVoice(for: "zh-CN") {
+      text += "Pour une voix chinoise bien plus naturelle : Réglages de l'iPhone › Accessibilité › Contenu énoncé › Voix › Chinois (Chine) › télécharge une voix « Premium » ou « Améliorée », puis reviens ici."
+    } else {
+      text += "Une voix chinoise de bonne qualité est installée ✓"
+    }
+    return text
   }
 }

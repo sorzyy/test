@@ -3,33 +3,32 @@ import Security
 
 /// Mode direct : l'app parle elle-même à Gemini, sans serveur.
 /// La clé reste dans le trousseau de l'iPhone (voir `KeyStore`).
-/// Mêmes consignes, même format de réponse et mêmes règles que le serveur (server/app/tutor.py),
-/// sauf la vérification du pinyin par dictionnaire, qui n'existe que côté serveur.
+/// Le « skill prof » (`TeacherSkill`) donne à Gemini sa personnalité et sa méthode ;
+/// le profil de l'élève (`LearnerProfile`) lui dit où en est l'élève.
 struct GeminiTutor {
   var apiKey: String
   var model: String = "gemini-3.5-flash"
+  /// Prévenu quand Gemini est surchargé et qu'on bascule sur un autre modèle.
+  var onFallback: (@MainActor (String) -> Void)? = nil
+
+  /// Modèles de secours, essayés dans l'ordre si le premier est surchargé ou indisponible.
+  static let fallbackModels = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
 
   // MARK: API publique
 
-  func scan(
-    jpeg: Data,
-    level: String,
-    maxNew: Int,
-    known: [String],
-    learning: [String],
-    challenge: String? = nil
-  ) async throws -> ScanResult {
-    var lines = Self.learnerLines(level: level, known: known, learning: learning)
+  func scan(jpeg: Data, profile: LearnerProfile, maxNew: Int, challenge: String? = nil) async throws -> ScanResult {
+    var lines = Self.profileLines(profile)
     lines.append("Mots nouveaux maximum : \(maxNew)")
     lines.append(challenge.map { "Défi : trouver « \($0) »" } ?? "Défi : aucun")
     lines.append("Fais la mini-leçon pour cette photo.")
     let raw: RawScan = try await generate(
-      system: Self.teachingRules + "\n" + Self.scanTask,
+      system: TeacherSkill.skill + "\n\n" + TeacherSkill.scanTask,
       text: lines.joined(separator: "\n"),
       schema: Self.scanSchema,
       jpeg: jpeg
     )
-    let words = Self.buildWords(raw.objects ?? [], known: known, learning: learning, maxNew: maxNew, limit: 6)
+    let words = Self.buildWords(
+      raw.objects ?? [], known: profile.known, learning: profile.learning, maxNew: maxNew, limit: 6)
     let teacher = raw.teacher?.sentence ?? Sentence(zh: "", pinyin: "", fr: "")
     var challengeResult: ChallengeResult?
     if let challenge {
@@ -44,22 +43,22 @@ struct GeminiTutor {
       words: words,
       teacher: teacher,
       challenge: challengeResult,
-      speech: Self.scanSpeech(words: words, teacher: teacher, challenge: challengeResult),
+      speech: LessonVoice.scan(words: words, teacher: teacher, challenge: challengeResult, teacherPace: true),
       demo: false
     )
   }
 
-  func ask(question: String, jpeg: Data?, level: String, known: [String], learning: [String]) async throws -> AskResult {
-    var lines = Self.learnerLines(level: level, known: known, learning: learning)
+  func ask(question: String, jpeg: Data?, profile: LearnerProfile) async throws -> AskResult {
+    var lines = Self.profileLines(profile)
     lines.append(jpeg == nil ? "Photo jointe : non" : "Photo jointe : oui")
     lines.append("Question de l'élève : « \(question.trimmingCharacters(in: .whitespacesAndNewlines)) »")
     let raw: RawAsk = try await generate(
-      system: Self.teachingRules + "\n" + Self.askTask,
+      system: TeacherSkill.skill + "\n\n" + TeacherSkill.askTask,
       text: lines.joined(separator: "\n"),
       schema: Self.askSchema,
       jpeg: jpeg
     )
-    let words = Self.buildWords(raw.words ?? [], known: known, learning: learning, maxNew: nil, limit: 2)
+    let words = Self.buildWords(raw.words ?? [], known: profile.known, learning: profile.learning, maxNew: nil, limit: 2)
     var intro = (raw.intro ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     let followup = (raw.followup ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     if words.isEmpty && intro.isEmpty { intro = "Je n'ai pas compris la question, tu peux répéter ?" }
@@ -68,15 +67,41 @@ struct GeminiTutor {
       intro: intro,
       words: words,
       followup: followup,
-      speech: Self.askSpeech(intro: intro, words: words, followup: followup),
+      speech: LessonVoice.ask(intro: intro, words: words, followup: followup, teacherPace: true),
       demo: false
     )
   }
 
-  // MARK: Appel HTTP à Gemini
+  // MARK: Appel HTTP à Gemini, avec bascule automatique
+
+  private enum Attempt: Error {
+    case retryable(String)
+  }
 
   private func generate<T: Decodable>(system: String, text: String, schema: String, jpeg: Data?) async throws -> T {
     guard !apiKey.isEmpty else { throw TutorClientError.server("Ajoute ta clé Gemini dans les réglages.") }
+    var models = [model]
+    for candidate in Self.fallbackModels where !models.contains(candidate) { models.append(candidate) }
+
+    var lastProblem = "Gemini est indisponible, réessaie."
+    for (index, candidate) in models.enumerated() {
+      do {
+        let value: T = try await generateOnce(model: candidate, system: system, text: text, schema: schema, jpeg: jpeg)
+        return value
+      } catch Attempt.retryable(let problem) {
+        lastProblem = problem
+        if index + 1 < models.count, let onFallback {
+          await onFallback("Gemini surchargé (\(candidate)), j'essaie \(models[index + 1])…")
+        }
+        continue
+      }
+    }
+    throw TutorClientError.server(lastProblem)
+  }
+
+  private func generateOnce<T: Decodable>(
+    model: String, system: String, text: String, schema: String, jpeg: Data?
+  ) async throws -> T {
     guard let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
       throw TutorClientError.server("Nom de modèle Gemini invalide.")
     }
@@ -97,21 +122,29 @@ struct GeminiTutor {
       ],
     ]
 
-    // Dans des lunettes, une réponse qui arrive après 30 s ne sert plus à rien.
-    var request = URLRequest(url: url, timeoutInterval: 30)
+    // Dans des lunettes, une réponse trop lente ne sert plus à rien : on passe au modèle suivant.
+    var request = URLRequest(url: url, timeoutInterval: 20)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
     request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-    let (data, response) = try await URLSession.shared.data(for: request)
+    let data: Data
+    let response: URLResponse
+    do {
+      (data, response) = try await URLSession.shared.data(for: request)
+    } catch let error as URLError where error.code == .timedOut || error.code == .networkConnectionLost {
+      throw Attempt.retryable("Gemini met trop de temps à répondre, réessaie.")
+    } catch let error as URLError where error.code == .notConnectedToInternet {
+      throw TutorClientError.server("Pas de connexion internet.")
+    }
     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
     guard (200..<300).contains(status) else {
       switch status {
       case 400, 401, 403: throw TutorClientError.server("Clé Gemini refusée. Vérifie-la dans les réglages.")
-      case 404: throw TutorClientError.server("Modèle Gemini introuvable : \(model).")
-      case 429: throw TutorClientError.server("Quota Gemini atteint, réessaie dans un moment.")
-      default: throw TutorClientError.server("Gemini est indisponible (\(status)), réessaie.")
+      case 404: throw Attempt.retryable("Modèle Gemini introuvable : \(model).")
+      case 429: throw Attempt.retryable("Quota Gemini atteint, réessaie dans un moment.")
+      default: throw Attempt.retryable("Gemini est indisponible (\(status)), réessaie.")
       }
     }
     let reply = try JSONDecoder().decode(GeminiResponse.self, from: data)
@@ -122,18 +155,18 @@ struct GeminiTutor {
     if ["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "IMAGE_SAFETY"].contains(finish) {
       throw TutorClientError.server("Je ne peux pas analyser ça. Vise plutôt des objets.")
     }
-    if finish == "MAX_TOKENS" { throw TutorClientError.server("Réponse trop longue, réessaie.") }
+    if finish == "MAX_TOKENS" { throw Attempt.retryable("Réponse trop longue, réessaie.") }
     let json = (candidate.content?.parts ?? [])
       .filter { $0.thought != true }
       .compactMap(\.text)
       .joined()
     guard let jsonData = json.data(using: .utf8), let value = try? JSONDecoder().decode(T.self, from: jsonData) else {
-      throw TutorClientError.server("Réponse illisible, réessaie.")
+      throw Attempt.retryable("Réponse illisible, réessaie.")
     }
     return value
   }
 
-  // MARK: Mise en forme (identique au serveur)
+  // MARK: Mise en forme
 
   static func isHanzi(_ text: String) -> Bool {
     !text.isEmpty
@@ -168,7 +201,7 @@ struct GeminiTutor {
           fr: (object.fr ?? "").trimmingCharacters(in: .whitespaces),
           where: (object.where ?? "").trimmingCharacters(in: .whitespaces),
           hsk: max(1, min(7, object.hsk ?? 7)),
-          measure: object.measure?.sentence ?? Sentence(zh: "", pinyin: "", fr: ""),
+          measure: fixedMeasure(object.measure?.sentence ?? Sentence(zh: "", pinyin: "", fr: "")),
           example: object.example?.sentence ?? Sentence(zh: "", pinyin: "", fr: ""),
           tip: (object.tip ?? "").trimmingCharacters(in: .whitespaces),
           status: status,
@@ -179,56 +212,27 @@ struct GeminiTutor {
     return words
   }
 
-  static func scanSpeech(words: [Word], teacher: Sentence, challenge: ChallengeResult?) -> [SpeechSegment] {
-    var segments: [SpeechSegment] = []
-    if let challenge { segments.append(SpeechSegment(lang: "fr-FR", text: challenge.feedback)) }
-    for word in words {
-      switch word.status {
-      case "new":
-        segments += [
-          SpeechSegment(lang: "zh-CN", text: word.hanzi),
-          SpeechSegment(lang: "fr-FR", text: word.fr),
-          SpeechSegment(lang: "zh-CN", text: word.measure.zh),
-          SpeechSegment(lang: "zh-CN", text: word.example.zh),
-          SpeechSegment(lang: "fr-FR", text: word.example.fr),
-        ]
-      case "review":
-        segments += [
-          SpeechSegment(lang: "zh-CN", text: word.hanzi),
-          SpeechSegment(lang: "fr-FR", text: "… \(word.fr)"),
-        ]
-      default:
-        break
-      }
-    }
-    segments.append(SpeechSegment(lang: "zh-CN", text: teacher.zh))
-    return segments.filter { !$0.text.isEmpty }
+  /// « 扇窗户 » + « yí shàn chuāng hu » → « 一扇窗户 » : le 一 oublié dans les caractères.
+  static func fixedMeasure(_ measure: Sentence) -> Sentence {
+    let pinyin = measure.pinyin.lowercased()
+    guard !measure.zh.isEmpty, !measure.zh.hasPrefix("一"),
+      pinyin.hasPrefix("yí ") || pinyin.hasPrefix("yì ") || pinyin.hasPrefix("yī ")
+    else { return measure }
+    return Sentence(zh: "一" + measure.zh, pinyin: measure.pinyin, fr: measure.fr)
   }
 
-  static func askSpeech(intro: String, words: [Word], followup: String) -> [SpeechSegment] {
-    var spokenIntro = intro
-    if containsHanzi(spokenIntro) { spokenIntro = words.isEmpty ? "" : "Voici la réponse :" }
-    var segments: [SpeechSegment] = spokenIntro.isEmpty ? [] : [SpeechSegment(lang: "fr-FR", text: spokenIntro)]
-    for (index, word) in words.enumerated() {
-      if index > 0 { segments.append(SpeechSegment(lang: "fr-FR", text: "Et aussi, pour « \(word.fr) » :")) }
-      segments += [
-        SpeechSegment(lang: "zh-CN", text: word.hanzi),
-        SpeechSegment(lang: "zh-CN", text: word.hanzi),
-        SpeechSegment(lang: "zh-CN", text: word.example.zh),
-        SpeechSegment(lang: "fr-FR", text: word.example.fr),
-      ]
+  static func profileLines(_ profile: LearnerProfile) -> [String] {
+    func list(_ items: [String], max: Int = 300) -> String {
+      let text = items.suffix(max).joined(separator: "、")
+      return text.isEmpty ? "(aucun)" : text
     }
-    if !followup.isEmpty, !containsHanzi(followup) { segments.append(SpeechSegment(lang: "fr-FR", text: followup)) }
-    return segments.filter { !$0.text.isEmpty }
-  }
-
-  private static func learnerLines(level: String, known: [String], learning: [String]) -> [String] {
-    let knownText = known.suffix(300).joined(separator: "、")
-    let learningText = learning.suffix(300).joined(separator: "、")
     return [
-      "Niveau : \(level)",
-      "Mots déjà connus : \(knownText.isEmpty ? "(aucun)" : knownText)",
-      "Mots en cours d'apprentissage : \(learningText.isEmpty ? "(aucun)" : learningText)",
+      "Profil de l'élève :",
+      "- Niveau : \(profile.level) ; \(profile.totalWords) mots rencontrés, dont \(profile.known.count) maîtrisés ; série : \(profile.streakDays) jour(s)",
+      "- Mots déjà connus : \(list(profile.known))",
+      "- Mots en cours d'apprentissage : \(list(profile.learning))",
+      "- Mots qu'il oublie souvent (réutilise-les dès que c'est naturel) : \(list(profile.struggling, max: 15))",
+      "- Derniers mots vus : \(list(profile.recent, max: 10))",
     ]
   }
 
@@ -283,49 +287,6 @@ struct GeminiTutor {
     let candidates: [Candidate]?
   }
 
-  // MARK: Consignes (copie de server/app/tutor.py)
-
-  static let teachingRules = """
-    Tu es Lǎoshī (老师), un professeur de chinois mandarin bienveillant qui vit dans les lunettes connectées d'un élève francophone. Tu lui parles à l'oreille.
-
-    Ce que tu enseignes doit être fiable : l'élève apprend sur cette base.
-    - Chinois standard de Chine continentale (普通话), caractères simplifiés.
-    - Pinyin avec accents de ton, syllabes séparées par une espace (« yǐ zi »), ton neutre sans accent. Pour le mot seul, pinyin du dictionnaire sans sandhi. Dans les phrases (classificateur, exemple), applique le sandhi de 一 et 不 (« yí ge », « yì bǎ », « bú shì »). Vérifie chaque syllabe et chaque ton.
-    - Choisis le mot le plus courant (杯子 plutôt que 玻璃杯, sauf si la précision est utile). Pas de mots rares ou littéraires.
-    - « tip » : une phrase en français pour retenir le mot. Décomposition du caractère (clé et sens) seulement si tu en es sûr (ex. 椅 contient la clé 木, le bois). N'invente jamais d'étymologie : si tu n'es pas sûr, donne plutôt une astuce d'usage.
-    - « measure » : le classificateur le plus courant, sous la forme « 一 + classificateur + mot » (一把椅子), avec pinyin et traduction.
-    - « example » : une phrase courte et naturelle. Elle réutilise surtout des mots que l'élève connaît déjà, plus le mot cible (un seul élément nouveau à la fois).
-    - « hsk » : niveau HSK (1 à 6) du mot, 7 s'il est hors liste HSK.
-
-    Niveau de l'élève :
-    - debutant : phrases de 4 à 8 caractères, structures 这是…、…在…上、有…, vocabulaire HSK 1-2.
-    - intermediaire : phrases jusqu'à 15 caractères, vocabulaire HSK 3-4.
-    - avance : phrases naturelles et idiomatiques, vocabulaire libre.
-
-    Confidentialité : ne décris pas et n'identifie pas les personnes, ne recopie pas le contenu des écrans ni des documents.
-    """
-
-  static let scanTask = """
-    TÂCHE : MINI-LEÇON SUR CE QUE VOIT L'ÉLÈVE.
-    Tu reçois une photo de ce qu'il regarde.
-    - Ne nomme que des objets clairement visibles. Dans le doute, ignore l'objet.
-    - « where » : position de l'objet sur la photo en quelques mots de français.
-    - « example » parle de la scène photographiée.
-    - « objects » (du plus visible au moins visible) : d'abord les mots « en cours d'apprentissage » visibles (les revoir en contexte les ancre), puis au plus le nombre demandé de mots nouveaux, éventuellement un ou deux mots connus. Maximum 6.
-    - « teacher » : une seule phrase que tu dis à voix haute, en chinois, à son niveau, à propos de la scène. De préférence une petite question qui le fait réutiliser un mot (« 桌子上有什么？»).
-    - « scene » : la scène en une courte phrase de français.
-    - « challenge » : null s'il n'y a pas de défi. Sinon l'élève devait trouver l'objet cible : « found » dit s'il est visible sur la photo, « feedback » le félicite (une phrase en français, avec le mot chinois) ou l'aide à chercher.
-    """
-
-  static let askTask = """
-    TÂCHE : RÉPONDRE À UNE QUESTION ORALE.
-    L'élève te pose une question à voix haute (transcrite automatiquement, donc parfois mal orthographiée : « que veut dire siège en chinois », « comment on dit fourchette », « c'est quoi yizi », « c'est quoi ça en chinois »). Une photo de ce qu'il regarde peut être jointe : utilise-la si la question parle de « ça », ou pour choisir le bon sens d'un mot ambigu (le siège d'une voiture n'est pas un siège social).
-    - « words » : le ou les mots chinois qui répondent (1 en général, 2 au maximum si le mot français a deux sens courants). Mêmes règles que plus haut ; « where » vide.
-    - « intro » : la réponse parlée, en français, une phrase courte qui sera lue par une voix française juste AVANT le mot chinois. Elle ne contient NI caractères chinois NI pinyin. Ex. : « Siège, en chinois, se dit : ».
-    - « followup » : une phrase en français dite après le mot, pour une nuance utile (« Le deuxième mot désigne plutôt une chaise. »). Ni caractères chinois ni pinyin non plus. Vide s'il n'y a rien d'utile à ajouter.
-    - Si la question n'a rien à voir avec le chinois : « words » vide, « intro » rappelle gentiment que tu es son prof de chinois, « followup » vide.
-    """
-
   // MARK: Schémas JSON (format Gemini, sans « additionalProperties »)
 
   private static let sentenceSchema = """
@@ -343,6 +304,81 @@ struct GeminiTutor {
   static let askSchema = """
     {"type":"object","properties":{"intro":{"type":"string"},"words":{"type":"array","items":\(wordSchema)},"followup":{"type":"string"}},"required":["intro","words","followup"]}
     """
+}
+
+// MARK: - Ce que les lunettes disent, et dans quel ordre
+
+/// Le « rythme de prof » : le mot lentement, puis à vitesse normale, le sens,
+/// un exemple, puis « À toi ! » avec un vrai silence pour répéter à voix haute.
+enum LessonVoice {
+  static func scan(words: [Word], teacher: Sentence, challenge: ChallengeResult?, teacherPace: Bool) -> [SpeechSegment] {
+    var segments: [SpeechSegment] = []
+    if let challenge { segments.append(SpeechSegment(lang: "fr-FR", text: challenge.feedback)) }
+    var invitedToRepeat = false
+    for word in words {
+      switch word.status {
+      case "new":
+        if teacherPace {
+          segments.append(SpeechSegment(lang: "zh-CN", text: word.hanzi, slow: true, pause: 0.6))
+        }
+        segments += [
+          SpeechSegment(lang: "zh-CN", text: word.hanzi),
+          SpeechSegment(lang: "fr-FR", text: word.fr),
+        ]
+        if teacherPace && !invitedToRepeat {
+          // Une seule fois par leçon, pour ne pas lasser.
+          invitedToRepeat = true
+          segments.append(SpeechSegment(lang: "fr-FR", text: "À toi !", pause: 2.2))
+          segments.append(SpeechSegment(lang: "zh-CN", text: word.hanzi, pause: 0.8))
+        }
+        segments += [
+          SpeechSegment(lang: "zh-CN", text: word.measure.zh),
+          SpeechSegment(lang: "zh-CN", text: word.example.zh),
+          SpeechSegment(lang: "fr-FR", text: word.example.fr),
+        ]
+      case "review":
+        // Rappel actif : le chinois, un temps pour chercher, puis la réponse.
+        segments += [
+          SpeechSegment(lang: "zh-CN", text: word.hanzi, pause: teacherPace ? 1.6 : 0.6),
+          SpeechSegment(lang: "fr-FR", text: word.fr),
+        ]
+      default:
+        break
+      }
+    }
+    if !teacher.zh.isEmpty {
+      // La question du prof, un temps pour répondre, puis la traduction en aide.
+      segments.append(SpeechSegment(lang: "zh-CN", text: teacher.zh, pause: teacherPace ? 2.5 : 0.45))
+      if teacherPace, !teacher.fr.isEmpty { segments.append(SpeechSegment(lang: "fr-FR", text: teacher.fr)) }
+    }
+    return segments.filter { !$0.text.isEmpty }
+  }
+
+  static func ask(intro: String, words: [Word], followup: String, teacherPace: Bool) -> [SpeechSegment] {
+    var spokenIntro = intro
+    if GeminiTutor.containsHanzi(spokenIntro) { spokenIntro = words.isEmpty ? "" : "Voici la réponse :" }
+    var segments: [SpeechSegment] = spokenIntro.isEmpty ? [] : [SpeechSegment(lang: "fr-FR", text: spokenIntro)]
+    for (index, word) in words.enumerated() {
+      if index > 0 { segments.append(SpeechSegment(lang: "fr-FR", text: "Et aussi, pour « \(word.fr) » :")) }
+      if teacherPace {
+        segments += [
+          SpeechSegment(lang: "zh-CN", text: word.hanzi, slow: true, pause: 0.6),
+          SpeechSegment(lang: "zh-CN", text: word.hanzi),
+        ]
+        if index == 0 {
+          segments.append(SpeechSegment(lang: "fr-FR", text: "À toi !", pause: 2.2))
+        }
+      } else {
+        segments += [SpeechSegment(lang: "zh-CN", text: word.hanzi), SpeechSegment(lang: "zh-CN", text: word.hanzi)]
+      }
+      segments += [
+        SpeechSegment(lang: "zh-CN", text: word.example.zh),
+        SpeechSegment(lang: "fr-FR", text: word.example.fr),
+      ]
+    }
+    if !followup.isEmpty, !GeminiTutor.containsHanzi(followup) { segments.append(SpeechSegment(lang: "fr-FR", text: followup)) }
+    return segments.filter { !$0.text.isEmpty }
+  }
 }
 
 /// Petit coffre pour la clé Gemini : le trousseau iOS (chiffré, propre à l'app).
