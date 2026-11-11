@@ -42,7 +42,11 @@ jobs:
           grep -q "BUILD SUCCEEDED" ipa.log
           APP="$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)"
           mkdir -p Payload && cp -R "$APP" Payload/
+          # Les binaires du SDK Meta sont en lecture seule : les outils de signature
+          # (iloader, SideStore, Sideloadly…) doivent pouvoir les réécrire.
+          chmod -R u+w Payload
           zip -qry Laoshi.ipa Payload
+          if zipinfo Laoshi.ipa | grep -E '^-r-x' ; then echo "Fichiers encore en lecture seule"; exit 1; fi
           ls -lh Laoshi.ipa
       - uses: actions/upload-artifact@v4
         with:
