@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct LaoshiApp: App {
   @State private var glasses: GlassesController
+  @Environment(\.scenePhase) private var scenePhase
 
   init() {
     do {
@@ -18,18 +19,9 @@ struct LaoshiApp: App {
     WindowGroup {
       ContentView(glasses: glasses)
         // Retour depuis l'app Meta AI après l'enregistrement / les permissions.
-        .onOpenURL { url in
-          guard
-            let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-            components.queryItems?.contains(where: { $0.name == "metaWearablesAction" }) == true
-          else { return }
-          Task {
-            do {
-              _ = try await Wearables.shared.handleUrl(url)
-            } catch {
-              glasses.report("Retour de Meta AI : \(error.localizedDescription)")
-            }
-          }
+        .onOpenURL { url in glasses.handleOpenURL(url) }
+        .onChange(of: scenePhase) { _, phase in
+          if phase == .active { glasses.appBecameActive() }
         }
     }
   }

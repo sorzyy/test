@@ -421,6 +421,18 @@ struct SettingsView: View {
           LabeledContent("Maîtrisés", value: "\(glasses.vocabulary.known.count)")
         }
         Section {
+          LabeledContent("Autorisation Meta AI", value: GlassesController.describe(glasses.registrationState))
+          LabeledContent("Lunettes détectées", value: glasses.hasActiveDevice ? "oui" : "non")
+          LabeledContent("Connexion", value: String(describing: glasses.sessionState))
+          LabeledContent("Caméra", value: glasses.hasFirstFrame ? "images reçues" : String(describing: glasses.streamState))
+          LabeledContent("Identifiant de l'app", value: Bundle.main.bundleIdentifier ?? "?")
+          Button("Refaire l'autorisation Meta AI", role: .destructive) { glasses.resetRegistration() }
+        } header: {
+          Text("Diagnostic")
+        } footer: {
+          Text("Si l'autorisation reste « pas encore faite » après Meta AI : active le Mode développeur dans Meta AI (Paramètres › tes lunettes), puis refais l'autorisation.")
+        }
+        Section {
           Button("Tester la voix") {
             Task {
               await glasses.speaker.speak([

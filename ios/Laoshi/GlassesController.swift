@@ -130,6 +130,9 @@ final class GlassesController {
   @ObservationIgnored private var listenTimeout: Task<Void, Never>?
   @ObservationIgnored private var watchdog: Task<Void, Never>?
   @ObservationIgnored private var announcedReady = false
+  /// Ce qu'on attend de Meta AI quand on l'a ouvert (autorisation, caméra, micro).
+  @ObservationIgnored private var waitingForMetaAI: String?
+  @ObservationIgnored private var returnCheck: Task<Void, Never>?
   #if canImport(MWDATSpeech)
   @ObservationIgnored private var speech: Speech?
   #endif
@@ -145,7 +148,9 @@ final class GlassesController {
         guard let self else { return }
         let wasRegistered = self.isRegistered
         self.registrationState = state
+        self.note("Autorisation Meta AI : \(Self.describe(state))")
         if self.isRegistered, !wasRegistered {
+          self.waitingForMetaAI = nil
           self.note("Lunettes autorisées dans Meta AI ✓", .success)
           if self.running { self.start() }
         }
@@ -277,12 +282,73 @@ final class GlassesController {
   // MARK: 1. Enregistrement (une seule fois, ouvre l'app Meta AI)
 
   func register() {
+    waitingForMetaAI = "l'autorisation de Lǎoshī"
     Task {
       do {
         try await wearables.startRegistration()
       } catch {
-        report("Enregistrement : \(error.localizedDescription)")
+        waitingForMetaAI = nil
+        running = false
+        report("Autorisation impossible : \(error.localizedDescription)")
       }
+    }
+  }
+
+  /// Bouton du diagnostic : retire l'autorisation pour pouvoir la refaire proprement.
+  func resetRegistration() {
+    Task {
+      do {
+        try await wearables.startUnregistration()
+        note("Autorisation retirée. Appuie sur Démarrer pour la refaire.")
+      } catch {
+        report("Impossible de retirer l'autorisation : \(error.localizedDescription)")
+      }
+    }
+  }
+
+  /// Lien reçu (retour depuis Meta AI). On l'affiche pour savoir si le retour arrive bien.
+  func handleOpenURL(_ url: URL) {
+    let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    guard components?.queryItems?.contains(where: { $0.name == "metaWearablesAction" }) == true else {
+      note("Lien reçu, mais pas pour les lunettes : \(url.absoluteString)", .warning)
+      return
+    }
+    waitingForMetaAI = nil
+    returnCheck?.cancel()
+    note("Retour de Meta AI reçu ✓", .success)
+    Task {
+      do {
+        _ = try await wearables.handleUrl(url)
+      } catch {
+        running = false
+        report("Meta AI a répondu par une erreur : \(error.localizedDescription)")
+      }
+    }
+  }
+
+  /// L'app revient au premier plan. Si on attendait Meta AI et que rien n'est arrivé,
+  /// on le dit au lieu de rester bloqué.
+  func appBecameActive() {
+    guard let what = waitingForMetaAI else { return }
+    returnCheck?.cancel()
+    returnCheck = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(4))
+      guard let self, !Task.isCancelled, self.waitingForMetaAI == what else { return }
+      self.waitingForMetaAI = nil
+      if what == "l'autorisation de Lǎoshī" { self.running = false }
+      self.report(
+        "Meta AI n'a pas confirmé \(what). Dans Meta AI : Paramètres › tes lunettes › Mode développeur doit être activé, "
+          + "et tu dois accepter la demande de Lǎoshī (sans revenir toi-même : Meta AI te renvoie ici). Puis réessaie.")
+    }
+  }
+
+  static func describe(_ state: RegistrationState) -> String {
+    switch state {
+    case .registered: return "autorisée"
+    case .registering: return "en cours"
+    case .available: return "pas encore faite"
+    case .unavailable: return "indisponible (Meta AI installé et à jour ?)"
+    @unknown default: return String(describing: state)
     }
   }
 
@@ -392,9 +458,12 @@ final class GlassesController {
     guard let session, camera == nil else { return }
     do {
       if try await wearables.checkPermissionStatus(.camera) != .granted {
-        note("Autorise la caméra dans Meta AI, puis reviens ici.")
+        note("Autorise la caméra dans Meta AI (« Toujours autoriser »), Meta AI te renvoie ici.")
+        waitingForMetaAI = "l'accès à la caméra"
         // Ouvre l'app Meta AI pour autoriser la caméra, puis revient ici.
-        guard try await wearables.requestPermission(.camera) == .granted else {
+        let status = try await wearables.requestPermission(.camera)
+        waitingForMetaAI = nil
+        guard status == .granted else {
           report("Permission caméra refusée dans Meta AI.")
           return
         }
@@ -410,6 +479,7 @@ final class GlassesController {
       streamState = .starting
       newCamera.stream.start()
     } catch {
+      waitingForMetaAI = nil
       report("Caméra : \(error.localizedDescription)")
     }
   }
@@ -509,7 +579,11 @@ final class GlassesController {
     guard !isListening, !isThinking else { return }
     do {
       if try await wearables.checkPermissionStatus(.microphone) != .granted {
-        guard try await wearables.requestPermission(.microphone) == .granted else {
+        note("Autorise le micro dans Meta AI, Meta AI te renvoie ici.")
+        waitingForMetaAI = "l'accès au micro"
+        let micStatus = try await wearables.requestPermission(.microphone)
+        waitingForMetaAI = nil
+        guard micStatus == .granted else {
           report("Permission micro refusée dans Meta AI.")
           return
         }
