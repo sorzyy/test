@@ -7,12 +7,18 @@ struct LaoshiApp: App {
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
+    var configureError: String?
     do {
       try Wearables.configure()
     } catch {
       NSLog("[Laoshi] Impossible de configurer le SDK des lunettes : \(error)")
+      configureError = error.localizedDescription
     }
-    _glasses = State(wrappedValue: GlassesController(wearables: Wearables.shared))
+    let controller = GlassesController(wearables: Wearables.shared)
+    if let configureError {
+      controller.report("Le SDK des lunettes n'a pas démarré : \(configureError)")
+    }
+    _glasses = State(wrappedValue: controller)
   }
 
   var body: some Scene {
