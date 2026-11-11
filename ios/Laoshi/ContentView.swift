@@ -430,7 +430,7 @@ struct SettingsView: View {
         } header: {
           Text("Diagnostic")
         } footer: {
-          Text("Si l'autorisation reste « pas encore faite » après Meta AI : active le Mode développeur dans Meta AI (Paramètres › tes lunettes), puis refais l'autorisation.")
+          Text("Si l'autorisation reste « pas encore faite » après Meta AI : \(GlassesController.devModeHelp) Ensuite, Lǎoshī doit apparaître dans Meta AI › Paramètres › Connexions d'apps › Apps en mode développeur.")
         }
         Section {
           Button("Tester la voix") {

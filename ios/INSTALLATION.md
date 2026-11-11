@@ -28,8 +28,11 @@ Ensuite, fais l'étape 1 (mode développeur dans Meta AI) puis l'étape 6 (premi
 
 ## 1. Activer le mode développeur
 
-- **Dans l'app Meta AI** : Paramètres › tes lunettes › **Mode développeur** → activé.
-  Ça autorise une app maison à utiliser les lunettes.
+- **Dans l'app Meta AI** : Paramètres › **Infos sur l'app** (App Info) › touche **5 fois le numéro de version**,
+  puis active **Mode développeur** et confirme. Ça autorise une app maison à utiliser les lunettes.
+  Si rien n'apparaît : force-quitte Meta AI, rouvre-le et recommence. Mets aussi Meta AI à jour.
+  Une fois Lǎoshī autorisé, il apparaît dans Meta AI › Paramètres › **Connexions d'apps** ›
+  Apps en mode développeur.
 - **Sur l'iPhone** : Réglages › Confidentialité et sécurité › **Mode développeur** → activé (l'iPhone redémarre).
   Si l'option n'apparaît pas, branche d'abord l'iPhone au Mac avec Xcode ouvert, elle apparaîtra.
 

@@ -337,10 +337,12 @@ final class GlassesController {
       self.waitingForMetaAI = nil
       if what == "l'autorisation de Lǎoshī" { self.running = false }
       self.report(
-        "Meta AI n'a pas confirmé \(what). Dans Meta AI : Paramètres › tes lunettes › Mode développeur doit être activé, "
-          + "et tu dois accepter la demande de Lǎoshī (sans revenir toi-même : Meta AI te renvoie ici). Puis réessaie.")
+        "Meta AI n'a pas confirmé \(what). Vérifie le mode développeur : \(Self.devModeHelp) "
+          + "Puis force-quitte Meta AI, garde les lunettes allumées hors de l'étui, et réessaie.")
     }
   }
+
+  static let devModeHelp = "Meta AI › Paramètres › Infos sur l'app : touche 5 fois le numéro de version, puis active le Mode développeur."
 
   static func describe(_ state: RegistrationState) -> String {
     switch state {
@@ -413,7 +415,7 @@ final class GlassesController {
       startWatchdog(seconds: 20) { [weak self] in
         guard let self, !self.isSessionStarted else { return nil }
         return "Les lunettes ne répondent pas. Vérifie : lunettes allumées et portées, Bluetooth activé, "
-          + "mode développeur activé dans Meta AI (Paramètres › tes lunettes). Puis Arrêter et Démarrer."
+          + "mode développeur de Meta AI activé (\(GlassesController.devModeHelp)). Puis Arrêter et Démarrer."
       }
     } catch {
       report("Connexion aux lunettes impossible : \(error.localizedDescription)")
