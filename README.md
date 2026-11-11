@@ -40,6 +40,13 @@ Les mots rencontrés vont dans ton vocabulaire. Ils reviennent ensuite en révis
    - consignes au modèle : mots courants, objets clairement visibles uniquement, et pas d'étymologie inventée ;
    - pinyin coloré par ton (1 rouge, 2 vert, 3 bleu, 4 violet, neutre gris) pour bien mémoriser les tons.
 
+## 0. Tester tout de suite (sans serveur ni clé)
+
+`artifact/laoshi.html` est une version web autonome publiée sur claude.ai. Elle utilise Claude depuis le
+compte de la personne qui l'ouvre : pas de serveur, pas de clé API. Elle comprend la photo depuis le
+téléphone, les questions au clavier ou dictées, la lecture à voix haute, les défis et les révisions. Seule
+différence avec le serveur : le pinyin n'y est pas recoupé avec le dictionnaire.
+
 ## 1. Lancer le serveur (5 minutes)
 
 Il faut une clé API **Gemini** (gratuite sur [aistudio.google.com/apikey](https://aistudio.google.com/apikey)).

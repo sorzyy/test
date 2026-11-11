@@ -1,0 +1,701 @@
+<title>Lǎoshī</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;700&display=swap">
+<style>
+/* Mise en page : une colonne d'appli de poche, barre d'onglets en bas ; jade + papier froid, hanzi en serif. */
+:root {
+  --bg: #f3f5f2;
+  --surface: #ffffff;
+  --surface-2: #e7ece7;
+  --fg: #17201c;
+  --muted: #5d6b64;
+  --border: #d5ddd7;
+  --accent: #0f6b5c;
+  --accent-fg: #ffffff;
+  --ok: #1d7a3e;
+  --warn: #9a5b00;
+  --danger: #b3261e;
+  --t1: #c62828; --t2: #2e7d32; --t3: #1565c0; --t4: #6a1b9a; --t5: #7a7f7c;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-hanzi: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101513; --surface: #18201c; --surface-2: #222c27; --fg: #e9efeb; --muted: #9aaaa2;
+    --border: #2e3a34; --accent: #4fc2a8; --accent-fg: #06201a; --ok: #6fcf86; --warn: #f0b45a; --danger: #ff8a80;
+    --t1: #ff7a70; --t2: #7ed38a; --t3: #78b4ff; --t4: #d39cf2; --t5: #a5aca8;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101513; --surface: #18201c; --surface-2: #222c27; --fg: #e9efeb; --muted: #9aaaa2;
+  --border: #2e3a34; --accent: #4fc2a8; --accent-fg: #06201a; --ok: #6fcf86; --warn: #f0b45a; --danger: #ff8a80;
+  --t1: #ff7a70; --t2: #7ed38a; --t3: #78b4ff; --t4: #d39cf2; --t5: #a5aca8;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font: 16px/1.5 var(--font-body);
+  padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding-block: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.top-inner { max-width: 640px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { display: flex; align-items: baseline; gap: 8px; font-weight: 700; font-size: 18px; }
+.brand .zh { font-family: var(--font-hanzi); color: var(--accent); font-size: 22px; }
+.status { font-size: 13px; color: var(--muted); text-align: right; min-width: 0; }
+.status.error { color: var(--danger); }
+main {
+  max-width: 640px; margin: 0 auto; padding-block: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.view { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+h1 { font-size: 22px; line-height: 1.25; margin: 0; text-wrap: balance; }
+h2 { font-size: 16px; margin: 0; }
+.lede { color: var(--muted); margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+.btn {
+  appearance: none; border: 1px solid var(--border); border-radius: 999px; padding: 11px 16px;
+  font: inherit; font-weight: 600; cursor: pointer; background: var(--surface); color: var(--fg);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-align: center;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn.big { padding: 16px; font-size: 17px; width: 100%; }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: .55; cursor: progress; }
+.btn:focus-visible, .mic:focus-visible, .speak:focus-visible, .tabs button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 2px;
+}
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.photo-zone { display: grid; gap: 10px; }
+.preview { width: 100%; max-width: 100%; max-height: 280px; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border); }
+.ask { display: flex; gap: 8px; align-items: center; }
+.ask input {
+  flex: 1; min-width: 0; font: inherit; padding: 11px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--fg);
+}
+.mic { flex: none; width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); color: var(--fg); font-size: 19px; cursor: pointer; }
+.mic.listening { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+@media (prefers-reduced-motion: no-preference) { .mic.listening { animation: pulse 1s ease-in-out infinite; } @keyframes pulse { 50% { transform: scale(1.08); } } }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 6px; min-width: 0; }
+.example-flag { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.scene { font-style: italic; color: var(--muted); margin: 0; }
+.word-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.hanzi { font-family: var(--font-hanzi); font-size: 44px; line-height: 1.1; font-weight: 500; }
+.pinyin { font-size: 19px; }
+.fr { font-size: 17px; font-weight: 600; }
+.tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.tag.new { background: var(--accent); color: var(--accent-fg); }
+.tag.review { color: var(--t3); }
+.zh { font-family: var(--font-hanzi); font-size: 18px; }
+.tip { font-size: 14px; color: var(--muted); }
+.speak { margin-left: auto; border: none; background: var(--surface-2); color: var(--fg); border-radius: 999px; width: 40px; height: 40px; font-size: 17px; cursor: pointer; }
+.t1 { color: var(--t1); } .t2 { color: var(--t2); } .t3 { color: var(--t3); } .t4 { color: var(--t4); } .t5 { color: var(--t5); }
+.teacher { border-left: 4px solid var(--accent); }
+.teacher .zh { font-size: 24px; }
+.ok { color: var(--ok); font-weight: 700; }
+.ko { color: var(--warn); font-weight: 700; }
+.challenge-word { text-align: center; }
+.challenge-word .hanzi { font-size: 68px; }
+.flash { text-align: center; padding-block: 24px; }
+.flash .hanzi { font-size: 72px; }
+.flash .row { justify-content: center; }
+.empty { text-align: center; color: var(--muted); padding-block: 24px; }
+.form { display: grid; gap: 14px; }
+.form label { display: grid; gap: 6px; font-weight: 600; }
+.form select, .form input[type=range] { font: inherit; width: 100%; }
+.form select { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--fg); }
+.method { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 15px; }
+.thinking { display: flex; align-items: center; gap: 10px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { .dot { animation: blink 1s infinite; } .dot:nth-child(2) { animation-delay: .2s; } .dot:nth-child(3) { animation-delay: .4s; } @keyframes blink { 50% { opacity: .2; } } }
+
+.tabs {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 6; background: var(--surface); border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
+}
+.tabs button {
+  appearance: none; border: none; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+  padding: 8px 4px 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; position: relative;
+}
+.tabs button .ico { font-family: var(--font-hanzi); font-size: 20px; line-height: 1.2; }
+.tabs button.active { color: var(--accent); font-weight: 700; }
+.badge { position: absolute; top: 4px; right: calc(50% - 26px); background: var(--accent); color: var(--accent-fg); font-size: 11px; border-radius: 999px; padding: 0 6px; min-width: 18px; }
+</style>
+
+<header class="top">
+  <div class="top-inner">
+    <div class="brand"><span class="zh">老师</span><span>Lǎoshī</span></div>
+    <div id="status" class="status" aria-live="polite">Ton prof de chinois</div>
+  </div>
+</header>
+
+<main>
+  <!-- VOIR -->
+  <section id="view-scan" class="view">
+    <div>
+      <h1>Montre-moi ce que tu vois</h1>
+      <p class="lede">Prends un objet en photo, je te dis son nom en chinois. Ou pose-moi une question.</p>
+    </div>
+    <div class="photo-zone">
+      <label class="btn primary big" id="photo-label">📷 Prendre une photo
+        <input id="photo" type="file" accept="image/*" capture="environment" hidden>
+      </label>
+      <img id="preview" class="preview" alt="Ta dernière photo" hidden>
+    </div>
+    <form id="ask-form" class="ask" autocomplete="off">
+      <button type="button" id="mic" class="mic" aria-label="Poser la question à voix haute" hidden>🎤</button>
+      <input id="question" type="text" placeholder="Que veut dire « siège » en chinois ?" enterkeyhint="send" aria-label="Ta question au prof">
+      <button type="submit" class="btn primary" id="ask-btn">Demander</button>
+    </form>
+    <div id="result"></div>
+  </section>
+
+  <!-- DÉFI -->
+  <section id="view-challenge" class="view" hidden>
+    <div id="challenge-box"></div>
+    <label class="btn primary big" id="found-label">📷 Je l'ai trouvé : photo !
+      <input id="found-photo" type="file" accept="image/*" capture="environment" hidden>
+    </label>
+    <button id="skip" class="btn">Autre mot</button>
+    <div id="challenge-result"></div>
+  </section>
+
+  <!-- RÉVISION -->
+  <section id="view-review" class="view" hidden>
+    <div id="review-box"></div>
+  </section>
+
+  <!-- RÉGLAGES -->
+  <section id="view-settings" class="view" hidden>
+    <div class="card form">
+      <label for="level">Niveau
+        <select id="level">
+          <option value="debutant">Débutant (HSK 1-2)</option>
+          <option value="intermediaire">Intermédiaire (HSK 3-4)</option>
+          <option value="avance">Avancé</option>
+        </select>
+      </label>
+      <label for="max-new">Mots nouveaux par photo
+        <select id="max-new"><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+      </label>
+      <label for="speed">Réponses
+        <select id="speed">
+          <option value="default">Soignées (quelques secondes de plus)</option>
+          <option value="quick">Rapides</option>
+        </select>
+      </label>
+      <label for="rate">Vitesse de la voix chinoise
+        <input id="rate" type="range" min="0.7" max="1.2" step="0.05">
+      </label>
+      <div class="row"><button id="test-voice" class="btn" type="button">🔊 Tester la voix</button></div>
+      <p id="voice-info" class="muted small"></p>
+    </div>
+    <div class="card form">
+      <h2>Mon vocabulaire</h2>
+      <p id="deck-stats" class="muted"></p>
+      <div class="row">
+        <button id="reset" class="btn danger" type="button">Tout effacer</button>
+        <button id="reset-confirm" class="btn danger" type="button" hidden>Oui, effacer définitivement</button>
+      </div>
+      <p class="muted small">Ton vocabulaire reste dans ce navigateur, sur cet appareil.</p>
+    </div>
+    <div class="card">
+      <h2>La méthode</h2>
+      <ul class="method">
+        <li><b>Le monde réel comme manuel.</b> Un mot attaché à un objet de ta vie se retient bien mieux qu'une liste.</li>
+        <li><b>Peu de nouveautés à la fois.</b> 1 à 3 mots nouveaux par photo, le reste en mots connus.</li>
+        <li><b>Rappel actif.</b> Pour un mot déjà vu, le chinois d'abord, la traduction après : essaie de répondre avant.</li>
+        <li><b>Répétition espacée.</b> Chaque mot revient après 1, 3, 7, 16, 35 puis 80 jours.</li>
+        <li><b>Défis.</b> Retrouver l'objet autour de toi, c'est la meilleure révision.</li>
+        <li><b>Tons en couleur.</b> <span class="t1">1er</span>, <span class="t2">2e</span>, <span class="t3">3e</span>, <span class="t4">4e</span>, <span class="t5">neutre</span>.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<nav class="tabs" role="tablist" aria-label="Sections">
+  <button role="tab" data-view="scan" class="active"><span class="ico" aria-hidden="true">看</span>Voir</button>
+  <button role="tab" data-view="challenge"><span class="ico" aria-hidden="true">找</span>Défi</button>
+  <button role="tab" data-view="review"><span class="ico" aria-hidden="true">记</span>Révision<b id="due-badge" class="badge" hidden></b></button>
+  <button role="tab" data-view="settings"><span class="ico" aria-hidden="true">设</span>Réglages</button>
+</nav>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("laoshi." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("laoshi." + k, JSON.stringify(v)); } catch { /* stockage indisponible */ } },
+};
+const settings = Object.assign({ level: "debutant", maxNew: 2, rate: 0.85, speed: "default" }, store.get("settings", {}));
+const saveSettings = () => store.set("settings", settings);
+function setStatus(text, err = false) { const el = $("#status"); el.textContent = text; el.classList.toggle("error", err); }
+
+/* ---------- Pinyin coloré ---------- */
+const MARKS = { "̄": 1, "́": 2, "̌": 3, "̀": 4 };
+const toneOf = (syl) => { for (const ch of syl.normalize("NFD")) if (MARKS[ch]) return MARKS[ch]; return 5; };
+const pinyinHTML = (p) => String(p || "").split(/(\s+)/).map((x) => (!x || /^\s+$/.test(x) ? x : `<span class="t${toneOf(x)}">${esc(x)}</span>`)).join("");
+const HANZI = /^[㐀-䶿一-鿿豈-﫿]+$/;
+const HAS_HANZI = /[㐀-䶿一-鿿]/;
+
+/* ---------- Capacités de la page ---------- */
+let sample = null, tts = null, dictation = null, ttsHasZh = false, ttsAllowed = true;
+const hasClaude = !!(window.claude && window.claude.use);
+
+/* ---------- Voix ---------- */
+const synth = window.speechSynthesis;
+let voices = [];
+const pickVoice = (lang) => voices.find((v) => v.lang === lang) || voices.find((v) => v.lang.replace("_", "-").startsWith(lang.slice(0, 2))) || null;
+function refreshVoiceInfo() {
+  if (synth) voices = synth.getVoices();
+  let msg;
+  if (tts && ttsHasZh && ttsAllowed) msg = "Voix : Claude.";
+  else if (synth && pickVoice("zh-CN")) msg = `Voix chinoise du navigateur : ${pickVoice("zh-CN").name}.`;
+  else if (synth) msg = "Aucune voix chinoise trouvée : ajoute « Chinois (Chine) » dans les réglages de synthèse vocale de ton appareil.";
+  else msg = "Lecture à voix haute indisponible ici : le texte reste affiché.";
+  $("#voice-info").textContent = msg;
+}
+if (synth) { synth.onvoiceschanged = refreshVoiceInfo; }
+let speakId = 0;
+async function speak(segments) {
+  if (!segments.length) return;
+  const id = ++speakId;
+  if (tts && ttsHasZh && ttsAllowed) {
+    try {
+      await tts.speak(segments.map((s) => {
+        const zh = s.lang.startsWith("zh");
+        return { text: s.text, language: zh ? "zh-CN" : "fr", rate: zh ? settings.rate : 1 };
+      }));
+    } catch (e) {
+      if (e && e.code === "not_granted") { ttsAllowed = false; refreshVoiceInfo(); }
+    }
+    return;
+  }
+  if (!synth) return;
+  synth.cancel();
+  for (const seg of segments) {
+    if (id !== speakId) return;
+    await new Promise((resolve) => {
+      const u = new SpeechSynthesisUtterance(seg.text);
+      u.lang = seg.lang;
+      const v = pickVoice(seg.lang); if (v) u.voice = v;
+      u.rate = seg.lang.startsWith("zh") ? settings.rate : 1;
+      u.onend = u.onerror = () => setTimeout(resolve, seg.lang.startsWith("zh") ? 450 : 250);
+      synth.speak(u);
+    });
+  }
+}
+function stopSpeaking() { speakId++; if (synth) synth.cancel(); if (tts) tts.stop().catch(() => {}); }
+
+/* ---------- Vocabulaire + répétition espacée ---------- */
+const DAY = 86400000, INTERVALS = [0, 1, 3, 7, 16, 35, 80], KNOWN_BOX = 4;
+let deck = store.get("deck", {});
+const cards = () => Object.values(deck);
+const dueCards = () => cards().filter((c) => c.due <= Date.now()).sort((a, b) => a.due - b.due);
+const knownList = () => cards().filter((c) => c.box >= KNOWN_BOX).map((c) => c.hanzi);
+const learningList = () => cards().filter((c) => c.box < KNOWN_BOX).map((c) => c.hanzi);
+function saveDeck() { store.set("deck", deck); updateBadge(); }
+function addOrTouch(w) {
+  const c = deck[w.hanzi];
+  if (c) { c.seen = (c.seen || 0) + 1; return; }
+  deck[w.hanzi] = { hanzi: w.hanzi, pinyin: w.pinyin, fr: w.fr, measure: w.measure, example: w.example, tip: w.tip, box: 0, due: Date.now(), seen: 1 };
+}
+function grade(hanzi, good) {
+  const c = deck[hanzi]; if (!c) return;
+  if (good) { c.box = Math.min(c.box + 1, INTERVALS.length - 1); c.due = Date.now() + INTERVALS[c.box] * DAY; }
+  else { c.box = 0; c.due = Date.now() + 10 * 60000; }
+  saveDeck();
+}
+function updateBadge() {
+  const n = dueCards().length, b = $("#due-badge");
+  b.hidden = n === 0; b.textContent = n > 99 ? "99+" : n;
+  const total = cards().length, known = knownList().length;
+  $("#deck-stats").textContent = `${total} mot${total > 1 ? "s" : ""} · ${known} maîtrisé${known > 1 ? "s" : ""} · ${n} à réviser`;
+}
+
+/* ---------- Consignes au prof ---------- */
+const RULES = `Tu es Lǎoshī (老师), un professeur de chinois mandarin bienveillant pour un élève francophone.
+Ce que tu enseignes doit être fiable : l'élève apprend sur cette base.
+- Chinois standard de Chine continentale (普通话), caractères simplifiés.
+- Pinyin avec accents de ton, syllabes séparées par une espace (« yǐ zi »), ton neutre sans accent. Pour le mot seul, pinyin du dictionnaire sans sandhi. Dans les phrases, applique le sandhi de 一 et 不 (« yí ge », « yì bǎ », « bú shì »). Vérifie chaque syllabe et chaque ton avant de répondre.
+- Le mot le plus courant (杯子 plutôt que 玻璃杯). Pas de mots rares ou littéraires.
+- « tip » : une phrase en français pour retenir le mot. Décomposition du caractère (clé et sens) seulement si tu en es sûr. N'invente jamais d'étymologie : sinon, une astuce d'usage.
+- « measure » : « 一 + classificateur + mot » (一把椅子), avec pinyin et traduction.
+- « example » : phrase courte et naturelle, surtout avec des mots que l'élève connaît, plus le mot cible.
+- « hsk » : niveau HSK 1 à 6, 7 si hors liste.
+Niveaux : debutant = phrases de 4 à 8 caractères, HSK 1-2 ; intermediaire = jusqu'à 15 caractères, HSK 3-4 ; avance = libre.
+Confidentialité : ne décris pas et n'identifie pas les personnes, ne recopie pas les écrans ni les documents.`;
+
+const WORD_SHAPE = `{"hanzi":"椅子","pinyin":"yǐ zi","fr":"chaise","where":"à gauche","hsk":1,"measure":{"zh":"一把椅子","pinyin":"yì bǎ yǐ zi","fr":"une chaise"},"example":{"zh":"这是一把椅子。","pinyin":"zhè shì yì bǎ yǐ zi.","fr":"C'est une chaise."},"tip":"椅 contient la clé 木 (le bois)."}`;
+
+function learnerLines() {
+  return `Niveau : ${settings.level}
+Mots déjà connus : ${knownList().slice(-300).join("、") || "(aucun)"}
+Mots en cours d'apprentissage : ${learningList().slice(-300).join("、") || "(aucun)"}`;
+}
+
+function scanPrompt(challenge) {
+  return `${RULES}
+
+TÂCHE : MINI-LEÇON SUR LA PHOTO JOINTE (ce que l'élève regarde).
+- Ne nomme que des objets clairement visibles. Dans le doute, ignore l'objet.
+- « where » : position de l'objet sur la photo, en quelques mots de français. « example » parle de la scène.
+- « objects », du plus visible au moins visible : d'abord les mots « en cours d'apprentissage » visibles, puis au plus ${settings.maxNew} mot(s) nouveau(x), éventuellement un ou deux mots connus. Maximum 6.
+- « teacher » : une phrase que tu dis à voix haute, en chinois, à son niveau, sur la scène ; de préférence une petite question (« 桌子上有什么？»).
+- « scene » : la scène en une courte phrase de français.
+- « challenge » : ${challenge ? `l'élève devait trouver « ${challenge} » : {"found": true/false selon que cet objet est visible, "feedback": une phrase en français qui le félicite (avec le mot chinois) ou l'aide à chercher}` : "null"}.
+
+${learnerLines()}
+
+Réponds uniquement avec un objet JSON de cette forme :
+{"scene":"...","objects":[${WORD_SHAPE}],"teacher":{"zh":"...","pinyin":"...","fr":"..."},"challenge":${challenge ? '{"found":true,"feedback":"..."}' : "null"}}`;
+}
+
+function askPrompt(question, withImage) {
+  return `${RULES}
+
+TÂCHE : RÉPONDRE À UNE QUESTION.
+La question peut être dictée, donc mal orthographiée (« que veut dire siège en chinois », « comment on dit fourchette », « c'est quoi yizi »). ${withImage ? "Une photo de ce que regarde l'élève est jointe : utilise-la si la question parle de « ça », ou pour choisir le bon sens d'un mot ambigu." : "Pas de photo jointe."}
+- « words » : le ou les mots chinois qui répondent (1 en général, 2 au maximum si le mot français a deux sens courants). « where » vide.
+- « intro » : la réponse parlée en français, une phrase courte lue juste AVANT le mot chinois, SANS caractères chinois ni pinyin (ex. « Siège, en chinois, se dit : »).
+- « followup » : une nuance utile en français, sans caractères chinois ni pinyin, ou vide.
+- Si la question n'a rien à voir avec le chinois : « words » vide, « intro » rappelle gentiment que tu es son prof de chinois.
+
+${learnerLines()}
+Question de l'élève : « ${question} »
+
+Réponds uniquement avec un objet JSON de cette forme :
+{"intro":"...","words":[${WORD_SHAPE.replace('"where":"à gauche"', '"where":""')}],"followup":"..."}`;
+}
+
+/* ---------- Mise en forme des réponses ---------- */
+const S = (o) => ({ zh: String(o?.zh ?? ""), pinyin: String(o?.pinyin ?? ""), fr: String(o?.fr ?? "") });
+function buildWords(objects, maxNew, limit) {
+  const known = new Set(knownList()), learning = new Set(learningList()), seen = new Set();
+  const out = []; let newCount = 0;
+  for (const o of Array.isArray(objects) ? objects : []) {
+    const hanzi = String(o?.hanzi ?? "").trim();
+    if (!hanzi || seen.has(hanzi) || !HANZI.test(hanzi)) continue;
+    const status = known.has(hanzi) ? "known" : learning.has(hanzi) ? "review" : "new";
+    if (status === "new" && maxNew != null) { if (newCount >= maxNew) continue; newCount++; }
+    seen.add(hanzi);
+    const hsk = Math.max(1, Math.min(7, parseInt(o.hsk, 10) || 7));
+    out.push({ hanzi, pinyin: String(o.pinyin ?? "").trim(), fr: String(o.fr ?? "").trim(), where: String(o.where ?? "").trim(), hsk, measure: S(o.measure), example: S(o.example), tip: String(o.tip ?? "").trim(), status });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+function scanSpeech(words, teacher, challenge) {
+  const segs = [];
+  if (challenge) segs.push({ lang: "fr-FR", text: challenge.feedback });
+  for (const w of words) {
+    if (w.status === "new") segs.push({ lang: "zh-CN", text: w.hanzi }, { lang: "fr-FR", text: w.fr }, { lang: "zh-CN", text: w.measure.zh }, { lang: "zh-CN", text: w.example.zh }, { lang: "fr-FR", text: w.example.fr });
+    else if (w.status === "review") segs.push({ lang: "zh-CN", text: w.hanzi }, { lang: "fr-FR", text: "… " + w.fr });
+  }
+  if (teacher.zh) segs.push({ lang: "zh-CN", text: teacher.zh });
+  return segs.filter((s) => s.text);
+}
+function askSpeech(intro, words, followup) {
+  if (HAS_HANZI.test(intro)) intro = words.length ? "Voici la réponse :" : "";
+  const segs = intro ? [{ lang: "fr-FR", text: intro }] : [];
+  words.forEach((w, i) => {
+    if (i > 0) segs.push({ lang: "fr-FR", text: `Et aussi, pour « ${w.fr} » :` });
+    segs.push({ lang: "zh-CN", text: w.hanzi }, { lang: "zh-CN", text: w.hanzi }, { lang: "zh-CN", text: w.example.zh }, { lang: "fr-FR", text: w.example.fr });
+  });
+  if (followup && !HAS_HANZI.test(followup)) segs.push({ lang: "fr-FR", text: followup });
+  return segs.filter((s) => s.text);
+}
+
+const LABEL = { new: "nouveau", review: "à revoir", known: "connu" };
+function wordHTML(w, i) {
+  return `<article class="card">
+    <div class="word-head"><span class="hanzi" lang="zh-CN">${esc(w.hanzi)}</span><span class="pinyin">${pinyinHTML(w.pinyin)}</span>
+      <button class="speak" data-say="${i}" aria-label="Écouter ${esc(w.hanzi)}">🔊</button></div>
+    <div><span class="fr">${esc(w.fr)}</span> <span class="tag ${esc(w.status)}">${LABEL[w.status] || ""}</span>
+      <span class="muted small">${w.where ? "· " + esc(w.where) + " " : ""}· HSK ${w.hsk === 7 ? "—" : esc(w.hsk)}</span></div>
+    ${w.measure.zh ? `<div><span class="zh" lang="zh-CN">${esc(w.measure.zh)}</span> · ${pinyinHTML(w.measure.pinyin)} · <span class="muted">${esc(w.measure.fr)}</span></div>` : ""}
+    ${w.example.zh ? `<div><span class="zh" lang="zh-CN">${esc(w.example.zh)}</span><br>${pinyinHTML(w.example.pinyin)}<br><span class="muted">${esc(w.example.fr)}</span></div>` : ""}
+    ${w.tip ? `<div class="tip">💡 ${esc(w.tip)}</div>` : ""}
+  </article>`;
+}
+function bindWordButtons(root, words, speech) {
+  root.querySelectorAll("[data-say]").forEach((b) => b.addEventListener("click", () => {
+    const w = words[Number(b.dataset.say)];
+    speak([{ lang: "zh-CN", text: w.hanzi }, ...(w.example.zh ? [{ lang: "zh-CN", text: w.example.zh }] : [])]);
+  }));
+  const r = root.querySelector("[data-replay]");
+  if (r) r.addEventListener("click", () => speak(speech));
+}
+function renderLesson(target, data, example = false) {
+  target.innerHTML = `<div class="view">
+    ${example ? `<div class="example-flag">Exemple de leçon</div>` : ""}
+    <p class="scene">${esc(data.scene)}</p>
+    ${data.words.length ? data.words.map(wordHTML).join("") : `<div class="card empty">Je ne vois pas d'objet à t'apprendre ici. Rapproche-toi d'un objet.</div>`}
+    ${data.teacher.zh ? `<article class="card teacher"><div class="muted small">Le prof te demande :</div>
+      <div class="zh" lang="zh-CN">${esc(data.teacher.zh)}</div><div>${pinyinHTML(data.teacher.pinyin)}</div><div class="muted">${esc(data.teacher.fr)}</div>
+      <div class="row"><button class="btn" data-replay>🔊 Écouter la leçon</button></div></article>` : ""}
+  </div>`;
+  bindWordButtons(target, data.words, data.speech);
+}
+function renderAnswer(target, data) {
+  target.innerHTML = `<div class="view">
+    <p><b>« ${esc(data.question)} »</b></p>
+    ${data.intro ? `<p>${esc(data.intro)}</p>` : ""}
+    ${data.words.map(wordHTML).join("")}
+    ${data.followup ? `<p class="muted">${esc(data.followup)}</p>` : ""}
+    <div class="row"><button class="btn" data-replay>🔊 Réécouter</button></div>
+  </div>`;
+  bindWordButtons(target, data.words, data.speech);
+}
+const thinkingHTML = (msg) => `<div class="card"><div class="thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>${esc(msg)}</span></div></div>`;
+
+/* ---------- Appels à Claude ---------- */
+const ERRORS = {
+  not_granted: "Tu n'as pas autorisé la page à utiliser Claude.",
+  sampling_disabled: "Claude n'est pas disponible pour ce compte.",
+  rate_limited: "Trop de demandes pour l'instant. Réessaie dans un moment.",
+  session_expired: "Reconnecte-toi à Claude, puis réessaie.",
+  image_rejected: "Cette image n'est pas lisible. Essaie une autre photo.",
+  images_unavailable: "L'envoi de photos n'est pas disponible ici.",
+  refused: "Je ne peux pas répondre à ça. Vise plutôt un objet.",
+  invalid_json: "Réponse illisible, réessaie.",
+  empty_completion: "Pas de réponse, réessaie.",
+};
+const errMsg = (e) => ERRORS[e?.code] || "Le prof n'a pas pu répondre. Réessaie.";
+async function askClaude(prompt, image) {
+  if (!sample) throw { code: hasClaude ? "sampling_disabled" : "no_viewer" };
+  const opts = { modelTier: settings.speed === "quick" ? "quick" : "default" };
+  if (settings.speed !== "quick") opts.effort = "low";
+  if (image) opts.images = image;
+  return sample.json(prompt, opts);
+}
+
+let busy = false;
+function setBusy(on) {
+  busy = on;
+  for (const id of ["#ask-btn", "#mic"]) $(id).disabled = on;
+  $("#photo").disabled = on; $("#found-photo").disabled = on;
+}
+
+async function runScan(file) {
+  if (busy || !file) return;
+  stopSpeaking(); setBusy(true);
+  const url = URL.createObjectURL(file);
+  const prev = $("#preview"); prev.src = url; prev.hidden = false;
+  $("#result").innerHTML = thinkingHTML("Le prof regarde ta photo…");
+  setStatus("Le prof regarde…");
+  try {
+    const raw = await askClaude(scanPrompt(null), file);
+    const words = buildWords(raw.objects, Number(settings.maxNew), 6);
+    const teacher = S(raw.teacher);
+    const data = { scene: String(raw.scene ?? ""), words, teacher, speech: scanSpeech(words, teacher, null) };
+    words.forEach((w) => { if (w.status !== "known") addOrTouch(w); }); saveDeck();
+    renderLesson($("#result"), data);
+    setStatus(words.length ? `${words.length} mot${words.length > 1 ? "s" : ""}` : "Rien de nouveau");
+    speak(data.speech);
+  } catch (e) {
+    $("#result").innerHTML = `<div class="card">${esc(e?.code === "no_viewer" ? "Ouvre cette page dans Claude pour que le prof puisse répondre." : errMsg(e))}</div>`;
+    setStatus("Erreur", true);
+  } finally { setBusy(false); }
+}
+
+async function runAsk(question) {
+  question = question.trim();
+  if (!question || busy) return;
+  stopSpeaking(); setBusy(true);
+  $("#result").innerHTML = thinkingHTML("Le prof réfléchit…");
+  setStatus("Le prof réfléchit…");
+  try {
+    const raw = await askClaude(askPrompt(question, false), null);
+    const words = buildWords(raw.words, null, 2);
+    let intro = String(raw.intro ?? "").trim(); const followup = String(raw.followup ?? "").trim();
+    if (!words.length && !intro) intro = "Je n'ai pas compris la question, tu peux répéter ?";
+    const data = { question, intro, words, followup, speech: askSpeech(intro, words, followup) };
+    words.forEach((w) => { if (w.status !== "known") addOrTouch(w); }); saveDeck();
+    renderAnswer($("#result"), data);
+    $("#question").value = "";
+    setStatus(words.length ? `${words.length} mot${words.length > 1 ? "s" : ""}` : "Réponse");
+    speak(data.speech);
+  } catch (e) {
+    $("#result").innerHTML = `<div class="card">${esc(e?.code === "no_viewer" ? "Ouvre cette page dans Claude pour que le prof puisse répondre." : errMsg(e))}</div>`;
+    setStatus("Erreur", true);
+  } finally { setBusy(false); }
+}
+
+$("#photo").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; runScan(f); });
+$("#ask-form").addEventListener("submit", (e) => { e.preventDefault(); runAsk($("#question").value); });
+
+/* ---------- Dictée ---------- */
+let dictText = "";
+$("#mic").addEventListener("click", () => {
+  if (!dictation) return;
+  if (dictation.active()) { dictation.stop().catch(() => {}); return; }
+  stopSpeaking();
+  dictText = "";
+  $("#question").value = "";
+  dictation.start({ language: "fr" }).catch((e) => {
+    if (e?.code === "not_granted" || e?.code === "unavailable") { $("#mic").hidden = true; setStatus("Dictée indisponible : écris ta question."); }
+  });
+});
+
+/* ---------- Défi ---------- */
+let target = null;
+function renderChallenge() {
+  $("#challenge-result").innerHTML = "";
+  const due = dueCards();
+  const pool = due.length ? due.slice(0, 5) : cards().filter((c) => c.box < KNOWN_BOX);
+  const list = pool.length ? pool : cards();
+  const others = list.filter((c) => !target || c.hanzi !== target.hanzi);
+  target = (others.length ? others : list)[Math.floor(Math.random() * (others.length || list.length))] || null;
+  $("#found-label").hidden = !target; $("#skip").hidden = !target;
+  if (!target) { $("#challenge-box").innerHTML = `<div class="card empty">Prends d'abord des photos dans « Voir » pour récolter des mots. Ils reviendront ici en défis.</div>`; return; }
+  $("#challenge-box").innerHTML = `<div class="card challenge-word">
+    <div class="muted">Trouve autour de toi :</div>
+    <div class="hanzi" lang="zh-CN">${esc(target.hanzi)}</div>
+    <div class="pinyin">${pinyinHTML(target.pinyin)}</div>
+    <details><summary class="muted">Indice</summary><div class="fr">${esc(target.fr)}</div></details>
+    <div class="row" style="justify-content:center"><button class="btn" id="say-target" type="button">🔊 Écouter</button></div>
+  </div>`;
+  $("#say-target").addEventListener("click", () => speak([{ lang: "zh-CN", text: target.hanzi }]));
+}
+$("#skip").addEventListener("click", renderChallenge);
+$("#found-photo").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f || busy || !target) return;
+  stopSpeaking(); setBusy(true);
+  $("#challenge-result").innerHTML = thinkingHTML("Le prof vérifie…");
+  try {
+    const raw = await askClaude(scanPrompt(target.hanzi), f);
+    const found = !!raw?.challenge?.found;
+    const feedback = String(raw?.challenge?.feedback ?? (found ? "Bravo !" : "Je ne le vois pas, cherche encore."));
+    if (found) grade(target.hanzi, true);
+    $("#challenge-result").innerHTML = `<div class="card"><div class="${found ? "ok" : "ko"}">${found ? "✓ Trouvé !" : "Pas encore…"}</div><div>${esc(feedback)}</div></div>
+      ${found ? `<button class="btn primary big" id="next-target" type="button">Mot suivant</button>` : ""}`;
+    if (found) $("#next-target").addEventListener("click", renderChallenge);
+    speak([{ lang: "fr-FR", text: feedback }]);
+  } catch (err) {
+    $("#challenge-result").innerHTML = `<div class="card">${esc(errMsg(err))}</div>`;
+  } finally { setBusy(false); }
+});
+
+/* ---------- Révision ---------- */
+function renderReview() {
+  const box = $("#review-box"), due = dueCards();
+  if (!due.length) {
+    box.innerHTML = `<div class="card empty">${cards().length ? "Rien à réviser pour l'instant. Reviens plus tard, ou prends de nouvelles photos !" : "Ton vocabulaire est vide. Prends un objet en photo dans « Voir »."}</div>`;
+    return;
+  }
+  const c = due[0];
+  box.innerHTML = `<p class="muted">${due.length} carte${due.length > 1 ? "s" : ""} à réviser</p>
+    <div class="card flash">
+      <div class="hanzi" lang="zh-CN">${esc(c.hanzi)}</div>
+      <div class="row"><button class="speak" id="rv-say" aria-label="Écouter" style="margin:0">🔊</button></div>
+      <div id="rv-answer" class="view" hidden>
+        <div class="pinyin">${pinyinHTML(c.pinyin)}</div>
+        <div class="fr">${esc(c.fr)}</div>
+        ${c.measure?.zh ? `<div><span class="zh" lang="zh-CN">${esc(c.measure.zh)}</span> · ${pinyinHTML(c.measure.pinyin)}</div>` : ""}
+        ${c.example?.zh ? `<div><span class="zh" lang="zh-CN">${esc(c.example.zh)}</span><br><span class="muted">${esc(c.example.fr)}</span></div>` : ""}
+        ${c.tip ? `<div class="tip">💡 ${esc(c.tip)}</div>` : ""}
+      </div>
+      <div class="row" id="rv-show-row"><button class="btn primary" id="rv-show" type="button">Voir la réponse</button></div>
+      <div class="row" id="rv-grade" hidden><button class="btn" id="rv-bad" type="button">À revoir</button><button class="btn primary" id="rv-good" type="button">Je savais</button></div>
+    </div>`;
+  $("#rv-say").addEventListener("click", () => speak([{ lang: "zh-CN", text: c.hanzi }]));
+  $("#rv-show").addEventListener("click", () => {
+    $("#rv-answer").hidden = false; $("#rv-show-row").hidden = true; $("#rv-grade").hidden = false;
+    speak([{ lang: "zh-CN", text: c.hanzi }, ...(c.example?.zh ? [{ lang: "zh-CN", text: c.example.zh }] : [])]);
+  });
+  $("#rv-bad").addEventListener("click", () => { grade(c.hanzi, false); renderReview(); });
+  $("#rv-good").addEventListener("click", () => { grade(c.hanzi, true); renderReview(); });
+}
+
+/* ---------- Réglages ---------- */
+$("#level").value = settings.level; $("#max-new").value = String(settings.maxNew);
+$("#speed").value = settings.speed; $("#rate").value = String(settings.rate);
+for (const [sel, key, conv] of [["#level", "level", String], ["#max-new", "maxNew", Number], ["#speed", "speed", String], ["#rate", "rate", Number]]) {
+  $(sel).addEventListener("change", (e) => { settings[key] = conv(e.target.value); saveSettings(); });
+}
+$("#test-voice").addEventListener("click", () => speak([{ lang: "zh-CN", text: "你好！我是你的中文老师。" }, { lang: "fr-FR", text: "Bonjour ! Je suis ton prof de chinois." }]));
+$("#reset").addEventListener("click", () => { $("#reset-confirm").hidden = false; });
+$("#reset-confirm").addEventListener("click", () => { deck = {}; saveDeck(); $("#reset-confirm").hidden = true; setStatus("Vocabulaire effacé"); });
+
+/* ---------- Navigation ---------- */
+function show(view) {
+  stopSpeaking();
+  document.querySelectorAll("main > section").forEach((s) => { s.hidden = s.id !== "view-" + view; });
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  if (view === "challenge") renderChallenge();
+  if (view === "review") renderReview();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+
+/* ---------- Exemple affiché au chargement ---------- */
+(function showExample() {
+  const words = [
+    { hanzi: "椅子", pinyin: "yǐ zi", fr: "chaise", where: "à gauche", hsk: 1, status: "new",
+      measure: { zh: "一把椅子", pinyin: "yì bǎ yǐ zi", fr: "une chaise" },
+      example: { zh: "桌子旁边有一把椅子。", pinyin: "zhuō zi páng biān yǒu yì bǎ yǐ zi.", fr: "Il y a une chaise à côté de la table." },
+      tip: "椅 contient la clé 木 (le bois) : une chaise, c'est souvent en bois." },
+    { hanzi: "苹果", pinyin: "píng guǒ", fr: "pomme", where: "sur la table, à droite", hsk: 1, status: "new",
+      measure: { zh: "一个苹果", pinyin: "yí ge píng guǒ", fr: "une pomme" },
+      example: { zh: "桌子上有一个苹果。", pinyin: "zhuō zi shang yǒu yí ge píng guǒ.", fr: "Il y a une pomme sur la table." },
+      tip: "苹 a la clé de l'herbe 艹 en haut : le monde végétal." },
+  ];
+  const teacher = { zh: "桌子上有什么？", pinyin: "zhuō zi shang yǒu shén me?", fr: "Qu'y a-t-il sur la table ?" };
+  renderLesson($("#result"), { scene: "Une table avec une chaise, un bol, une tasse et une pomme.", words, teacher, speech: scanSpeech(words, teacher, null) }, true);
+})();
+
+updateBadge();
+refreshVoiceInfo();
+
+/* ---------- Branchement des capacités (après le premier affichage) ---------- */
+if (hasClaude) {
+  claude.use("sample").then((s) => {
+    sample = s;
+    if (!s) setStatus("Claude indisponible ici", true);
+  });
+  claude.use("tts").then(async (t) => {
+    tts = t;
+    if (t) {
+      const langs = await (t.languages ? t.languages().catch(() => undefined) : Promise.resolve(undefined));
+      ttsHasZh = !!(langs && langs.some((l) => l.toLowerCase().startsWith("zh")));
+      if (t.setRate) t.setRate(1).catch?.(() => {});
+    }
+    refreshVoiceInfo();
+  });
+  claude.use("dictation").then((d) => {
+    dictation = d;
+    if (!d) return;
+    $("#mic").hidden = false;
+    d.onPartial(({ text }) => { $("#question").value = (dictText + " " + text).trim(); });
+    d.onFinal(({ text }) => { dictText = (dictText + text).trim(); $("#question").value = dictText; });
+    d.onState(({ state, reason }) => {
+      $("#mic").classList.toggle("listening", state !== "idle");
+      if (state === "listening") setStatus("Je t'écoute…");
+      if (state === "idle") {
+        if ((reason === "stopped" || reason === "viewer_stopped") && dictText) runAsk(dictText);
+        else if (reason === "not_granted" || reason === "unavailable") { $("#mic").hidden = true; setStatus("Dictée indisponible : écris ta question."); }
+        else setStatus("Ton prof de chinois");
+      }
+    });
+  });
+} else {
+  setStatus("Ouvre cette page dans Claude", true);
+}
+</script>
