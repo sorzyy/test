@@ -11,6 +11,47 @@ import MWDATInputs
 import MWDATSpeech
 #endif
 
+/// Les façons d'apprendre. Le gros bouton de l'écran et le bouton photo des lunettes
+/// déclenchent l'action du mode choisi.
+enum LessonMode: String, CaseIterable, Identifiable {
+  case look, ask, walk, challenge
+
+  var id: String { rawValue }
+  var title: String {
+    switch self {
+    case .look: return "Regarder"
+    case .ask: return "Demander"
+    case .walk: return "Balade"
+    case .challenge: return "Défi"
+    }
+  }
+  var icon: String {
+    switch self {
+    case .look: return "eye.fill"
+    case .ask: return "mic.fill"
+    case .walk: return "figure.walk"
+    case .challenge: return "target"
+    }
+  }
+  var hint: String {
+    switch self {
+    case .look: return "Regarde un objet, le prof te dit son nom."
+    case .ask: return "Pose une question : « que veut dire siège ? »"
+    case .walk: return "Une mini-leçon toutes les 15 s, sans rien toucher."
+    case .challenge: return "Retrouve autour de toi un mot déjà appris."
+    }
+  }
+}
+
+/// Une ligne du fil d'activité affiché à l'écran : l'app n'est jamais silencieuse.
+struct ActivityEntry: Identifiable {
+  enum Kind { case info, success, warning, error }
+  let id = UUID()
+  let date = Date()
+  let text: String
+  let kind: Kind
+}
+
 /// Pilote les lunettes : enregistrement auprès de Meta AI, session, flux caméra,
 /// bouton photo, « Hey Meta, lance Lǎoshī », micro des lunettes, puis envoi au prof
 /// et lecture de la réponse dans les haut-parleurs des lunettes.
@@ -30,6 +71,14 @@ final class GlassesController {
   var lastResult: ScanResult?
   var lastAnswer: AskResult?
   var message: String?
+  /// L'utilisateur a appuyé sur « Démarrer » (et pas encore sur « Arrêter »).
+  var running = false
+  var mode: LessonMode = .look {
+    didSet { if oldValue != mode { modeChanged() } }
+  }
+  var activity: [ActivityEntry] = []
+  var challengeWord: Card?
+  var hasFirstFrame = false
   var autoMode = false {
     didSet { autoMode ? startAutoMode() : stopAutoMode() }
   }
@@ -79,6 +128,8 @@ final class GlassesController {
   @ObservationIgnored private var voiceStream: VoiceInvocationsStream?
   @ObservationIgnored private var listenAfterStart = false
   @ObservationIgnored private var listenTimeout: Task<Void, Never>?
+  @ObservationIgnored private var watchdog: Task<Void, Never>?
+  @ObservationIgnored private var announcedReady = false
   #if canImport(MWDATSpeech)
   @ObservationIgnored private var speech: Speech?
   #endif
@@ -91,19 +142,137 @@ final class GlassesController {
     self.deviceSelector = AutoDeviceSelector(wearables: wearables)
     tasks.append(Task { [weak self] in
       for await state in wearables.registrationStateStream() {
-        self?.registrationState = state
+        guard let self else { return }
+        let wasRegistered = self.isRegistered
+        self.registrationState = state
+        if self.isRegistered, !wasRegistered {
+          self.note("Lunettes autorisées dans Meta AI ✓", .success)
+          if self.running { self.start() }
+        }
       }
     })
     tasks.append(Task { [weak self] in
       guard let selector = self?.deviceSelector else { return }
       for await device in selector.activeDeviceStream() {
-        self?.hasActiveDevice = device != nil
-        if let device { self?.startVoiceInvocations(on: device) }
+        guard let self else { return }
+        let had = self.hasActiveDevice
+        self.hasActiveDevice = device != nil
+        if let device {
+          if !had { self.note("Lunettes détectées ✓", .success) }
+          self.startVoiceInvocations(on: device)
+        } else if had {
+          self.note("Lunettes perdues : sont-elles allumées et sur ton nez ?", .warning)
+        }
       }
     })
   }
 
-  func report(_ text: String) { message = text }
+  func report(_ text: String) {
+    message = text
+    note(text, .error)
+  }
+
+  func note(_ text: String, _ kind: ActivityEntry.Kind = .info) {
+    activity.insert(ActivityEntry(text: text, kind: kind), at: 0)
+    if activity.count > 40 { activity.removeLast(activity.count - 40) }
+  }
+
+  // MARK: 0. Le gros bouton
+
+  /// Fait tout dans l'ordre : autorisation Meta AI, connexion aux lunettes, caméra.
+  /// Chaque étape s'affiche dans le fil d'activité, et un délai signale ce qui bloque.
+  func powerOn() {
+    message = nil
+    if geminiKey.trimmingCharacters(in: .whitespaces).isEmpty && serverURL.trimmingCharacters(in: .whitespaces).isEmpty {
+      report("Ajoute d'abord ta clé Gemini : bouton ⚙︎ en haut à droite.")
+      return
+    }
+    running = true
+    announcedReady = false
+    if !isRegistered {
+      note("Étape 1/3 : autorise Lǎoshī dans l'app Meta AI qui va s'ouvrir…")
+      register()
+      return
+    }
+    if !hasActiveDevice {
+      note("Lunettes pas encore détectées : allume-les et mets-les. J'essaie quand même…", .warning)
+    }
+    start()
+  }
+
+  func powerOff() {
+    running = false
+    watchdog?.cancel()
+    stop()
+    note("Arrêté.")
+  }
+
+  /// Action du gros bouton (et du bouton photo des lunettes) selon le mode.
+  func primaryAction() async {
+    switch mode {
+    case .look, .walk:
+      await scan()
+    case .ask:
+      if isListening { stopListening() } else { await listenForQuestion() }
+    case .challenge:
+      if let word = challengeWord {
+        await scan(challenge: word.hanzi)
+      } else {
+        await newChallenge()
+      }
+    }
+  }
+
+  func newChallenge() async {
+    let due = vocabulary.due
+    let pool = due.isEmpty ? Array(vocabulary.cards.values) : due
+    let others = pool.filter { $0.hanzi != challengeWord?.hanzi }
+    guard let word = (others.isEmpty ? pool : others).randomElement() else {
+      challengeWord = nil
+      report("Pas encore de mots à retrouver : utilise d'abord le mode Regarder.")
+      return
+    }
+    challengeWord = word
+    note("Défi : trouve « \(word.hanzi) » (\(word.pinyin)).")
+    await speaker.speak([
+      SpeechSegment(lang: "fr-FR", text: "Trouve autour de toi :"),
+      SpeechSegment(lang: "zh-CN", text: word.hanzi),
+    ])
+  }
+
+  private func modeChanged() {
+    autoMode = (mode == .walk && isStreaming)
+    stopListening()
+    note("Mode \(mode.title) : \(mode.hint)")
+    guard isStreaming else { return }
+    Task {
+      await speaker.speak([SpeechSegment(lang: "fr-FR", text: "Mode \(mode.title).")])
+      if mode == .challenge, challengeWord == nil { await newChallenge() }
+    }
+  }
+
+  /// Appelé une fois, quand la caméra envoie sa première image.
+  private func cameraReady() {
+    guard !announcedReady else { return }
+    announcedReady = true
+    watchdog?.cancel()
+    note("Étape 3/3 : caméra des lunettes active ✓ Tout est prêt.", .success)
+    autoMode = (mode == .walk)
+    Task {
+      await speaker.speak([SpeechSegment(lang: "fr-FR", text: "Lǎoshī est prêt. Mode \(mode.title).")])
+      if mode == .challenge, challengeWord == nil { await newChallenge() }
+    }
+  }
+
+  /// Si une étape ne finit pas à temps, dire quoi vérifier au lieu de rester muet.
+  private func startWatchdog(seconds: Double, _ advice: @escaping @MainActor () -> String?) {
+    watchdog?.cancel()
+    watchdog = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(seconds))
+      guard !Task.isCancelled, let self, self.running, let text = advice() else { return }
+      self.report(text)
+    }
+  }
 
   // MARK: 1. Enregistrement (une seule fois, ouvre l'app Meta AI)
 
@@ -173,9 +342,15 @@ final class GlassesController {
         Task { @MainActor in self?.report(error.localizedDescription) }
       }.store(in: sessionTokens)
       sessionState = .starting
+      note("Étape 2/3 : connexion aux lunettes…")
       try newSession.start()
+      startWatchdog(seconds: 20) { [weak self] in
+        guard let self, !self.isSessionStarted else { return nil }
+        return "Les lunettes ne répondent pas. Vérifie : lunettes allumées et portées, Bluetooth activé, "
+          + "mode développeur activé dans Meta AI (Paramètres › tes lunettes). Puis Arrêter et Démarrer."
+      }
     } catch {
-      report("Session : \(error.localizedDescription)")
+      report("Connexion aux lunettes impossible : \(error.localizedDescription)")
       cleanupSession()
     }
   }
@@ -191,6 +366,12 @@ final class GlassesController {
     sessionState = state
     switch state {
     case .started:
+      note("Lunettes connectées ✓ Démarrage de la caméra…", .success)
+      startWatchdog(seconds: 25) { [weak self] in
+        guard let self, !self.hasFirstFrame else { return nil }
+        return "La caméra des lunettes ne s'allume pas. Si Meta AI t'a demandé l'accès à la caméra, accepte-le. "
+          + "Sinon : Arrêter, attends 5 secondes, puis Démarrer."
+      }
       attachCaptureButton()
       Task {
         await startCamera()
@@ -201,6 +382,7 @@ final class GlassesController {
       }
     case .stopped:
       cleanupSession()
+      if running { note("Connexion aux lunettes fermée.", .warning) }
     default:
       break
     }
@@ -210,6 +392,7 @@ final class GlassesController {
     guard let session, camera == nil else { return }
     do {
       if try await wearables.checkPermissionStatus(.camera) != .granted {
+        note("Autorise la caméra dans Meta AI, puis reviens ici.")
         // Ouvre l'app Meta AI pour autoriser la caméra, puis revient ici.
         guard try await wearables.requestPermission(.camera) == .granted else {
           report("Permission caméra refusée dans Meta AI.")
@@ -243,8 +426,16 @@ final class GlassesController {
     stream.videoFramePublisher.listen { [weak self] frame in
       // Hors du thread principal : on garde la dernière image, et on rafraîchit
       // l'aperçu du téléphone ~3 fois par seconde seulement.
-      if box.store(frame) % 5 == 0, let image = frame.makeUIImage() {
-        Task { @MainActor in self?.preview = image }
+      let count = box.store(frame)
+      if count == 1 || count % 5 == 0, let image = frame.makeUIImage() {
+        Task { @MainActor in
+          guard let self else { return }
+          self.preview = image
+          if !self.hasFirstFrame {
+            self.hasFirstFrame = true
+            self.cameraReady()
+          }
+        }
       }
     }.store(in: streamTokens)
 
@@ -265,13 +456,15 @@ final class GlassesController {
     do {
       let configuration = InputsConfiguration(sources: [.captureButton], consumeBack: false)
       guard let inputs = try session.addInputs(configuration: configuration) else { return }
+      note("Bouton photo des lunettes actif ✓", .success)
       inputsTask = Task { [weak self] in
         for await event in inputs.events {
-          if case .capture = event { await self?.scan() }
+          if case .capture = event { await self?.primaryAction() }
         }
       }
     } catch {
       NSLog("[Laoshi] Bouton des lunettes indisponible : \(error)")
+      note("Bouton photo des lunettes non activé (fonction Meta à activer) : utilise le bouton de l'app.", .warning)
     }
     #else
     #warning("MWDATInputs absent : le bouton photo des lunettes est désactivé")
@@ -283,6 +476,9 @@ final class GlassesController {
     camera?.stop()
     camera = nil
     preview = nil
+    hasFirstFrame = false
+    announcedReady = false
+    autoMode = false
     latestFrame.clear()
   }
 
@@ -320,7 +516,7 @@ final class GlassesController {
       }
       if speech == nil {
         guard let newSpeech = try session.addSpeech() else {
-          report("Reconnaissance vocale indisponible sur ces lunettes.")
+          report("Le micro des lunettes n'est pas activé pour l'app (fonction Meta à activer).")
           return
         }
         newSpeech.transcriptionPublisher.listen { [weak self] result in
@@ -343,6 +539,7 @@ final class GlassesController {
 
     // Signal sonore dans les lunettes, puis on écoute (pas pendant : il s'entendrait).
     await speaker.speak([SpeechSegment(lang: "fr-FR", text: "Oui ?")])
+    note("Je t'écoute… pose ta question.")
     transcript = ""
     isListening = true
     speech?.start()
@@ -394,6 +591,7 @@ final class GlassesController {
     isThinking = true
     speaker.stop()
     defer { isThinking = false }
+    note("« \(question) » — le prof réfléchit…")
     do {
       let image = isStreaming ? latestFrame.jpeg() : nil
       let result: AskResult
@@ -408,6 +606,7 @@ final class GlassesController {
       lastAnswer = result
       lastResult = nil
       message = nil
+      note(result.words.isEmpty ? "Réponse du prof." : "Réponse : " + result.words.map(\.hanzi).joined(separator: ", "), .success)
       await speaker.speak(result.speech)
     } catch {
       report(error.localizedDescription)
@@ -419,7 +618,7 @@ final class GlassesController {
   func scan(challenge: String? = nil) async {
     guard !isThinking else { return }
     guard isStreaming else {
-      report("Lance d'abord la caméra des lunettes.")
+      report("Appuie d'abord sur « Démarrer » pour allumer la caméra des lunettes.")
       return
     }
     isThinking = true
@@ -427,6 +626,7 @@ final class GlassesController {
     speaker.stop()
     defer { isThinking = false }
 
+    note("Photo prise, le prof regarde…")
     guard let jpeg = await takePhoto() else {
       report("Pas d'image des lunettes, réessaie.")
       return
@@ -445,10 +645,15 @@ final class GlassesController {
       vocabulary.record(result.words)
       if let challenge, result.challenge?.found == true {
         vocabulary.grade(challenge, good: true)
+        challengeWord = nil
+        note("Défi réussi ✓ Appuie pour un nouveau défi.", .success)
       }
       lastResult = result
       lastAnswer = nil
       message = nil
+      if challenge == nil {
+        note(result.words.isEmpty ? "Rien de nouveau ici. Rapproche-toi d'un objet." : "Leçon : " + result.words.map(\.hanzi).joined(separator: ", "), .success)
+      }
       await speaker.speak(result.speech)
     } catch {
       report(error.localizedDescription)

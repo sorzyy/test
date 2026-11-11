@@ -3,138 +3,284 @@ import SwiftUI
 struct ContentView: View {
   @Bindable var glasses: GlassesController
   @State private var showSettings = false
-  @State private var challengeWord: Card?
 
   var body: some View {
     NavigationStack {
       ScrollView {
-        VStack(spacing: 16) {
-          connectionCard
-          if glasses.isStreaming { lessonControls }
-          if let challengeWord { challengeCard(challengeWord) }
-          if glasses.isSessionStarted { questionControls }
-          if let answer = glasses.lastAnswer { AnswerView(answer: answer, replay: replay) }
-          if let result = glasses.lastResult { LessonView(result: result, replay: replay) }
-          if let message = glasses.message {
-            Text(message).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 20) {
+          if let message = glasses.message { ErrorBanner(text: message) { glasses.message = nil } }
+          StepsView(glasses: glasses)
+          if glasses.running {
+            runningPanel
+          } else {
+            PowerButton(glasses: glasses)
           }
+          ModePicker(selection: $glasses.mode)
+          if glasses.running, glasses.isStreaming { results }
+          ActivityList(entries: glasses.activity)
         }
         .padding()
       }
       .navigationTitle("老师 Lǎoshī")
       .toolbar {
         Button { showSettings = true } label: { Image(systemName: "gearshape") }
+          .accessibilityLabel("Réglages")
       }
       .sheet(isPresented: $showSettings) { SettingsView(glasses: glasses) }
     }
   }
 
-  // MARK: Connexion
+  // MARK: Pendant l'utilisation
 
-  @ViewBuilder private var connectionCard: some View {
-    VStack(spacing: 12) {
-      if !glasses.isRegistered {
-        Text("Connecte tes lunettes Meta via l'app Meta AI (une seule fois).")
-          .multilineTextAlignment(.center)
-        Button("Connecter mes lunettes", action: glasses.register).buttonStyle(.borderedProminent)
-      } else if !glasses.hasActiveDevice {
-        Label("Mets tes lunettes et allume-les", systemImage: "eyeglasses")
-      } else if glasses.sessionState == .idle || glasses.sessionState == .stopped {
-        Button("Démarrer la caméra des lunettes", action: glasses.start).buttonStyle(.borderedProminent)
-      } else if !glasses.isStreaming {
-        ProgressView("Connexion aux lunettes…")
-      }
-
+  @ViewBuilder private var runningPanel: some View {
+    VStack(spacing: 14) {
       if let preview = glasses.preview {
         Image(uiImage: preview)
-          .resizable().scaledToFit()
-          .clipShape(RoundedRectangle(cornerRadius: 14))
-          .overlay(alignment: .topTrailing) {
-            if glasses.isThinking { ProgressView().padding(8).background(.ultraThinMaterial, in: Circle()).padding(8) }
+          .resizable().scaledToFill()
+          .frame(maxWidth: .infinity, maxHeight: 220)
+          .clipShape(RoundedRectangle(cornerRadius: 16))
+          .overlay(alignment: .topLeading) {
+            Label("Vue des lunettes", systemImage: "eyeglasses")
+              .font(.caption.bold()).padding(6)
+              .background(.ultraThinMaterial, in: Capsule()).padding(8)
           }
-      }
-      if glasses.isStreaming {
-        Button("Arrêter", role: .destructive, action: glasses.stop).font(.footnote)
-      }
-    }
-    .frame(maxWidth: .infinity)
-  }
-
-  // MARK: Leçon
-
-  private var lessonControls: some View {
-    VStack(spacing: 10) {
-      Button {
-        Task { await glasses.scan() }
-      } label: {
-        Text(glasses.isThinking ? "Le prof regarde…" : "Qu'est-ce que je vois ?")
-          .font(.title3.bold()).frame(maxWidth: .infinity).padding(.vertical, 8)
-      }
-      .buttonStyle(.borderedProminent)
-      .disabled(glasses.isThinking)
-
-      Text("Astuce : appuie sur le bouton photo des lunettes pour scanner sans sortir ton téléphone.")
-        .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-
-      Toggle("Mode balade (toutes les 15 s)", isOn: $glasses.autoMode)
-
-      Button("🎯 Défi : retrouver un mot") {
-        let due = glasses.vocabulary.due
-        challengeWord = (due.isEmpty ? Array(glasses.vocabulary.cards.values) : due).randomElement()
-        if let word = challengeWord {
-          Task { await glasses.speaker.speak([SpeechSegment(lang: "zh-CN", text: word.hanzi)]) }
+          .overlay {
+            if glasses.isThinking {
+              ProgressView("Le prof réfléchit…").padding().background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+          }
+      } else {
+        VStack(spacing: 10) {
+          ProgressView()
+          Text("Connexion aux lunettes…").font(.headline)
+          Text("Suis les étapes ci-dessus. Si Meta AI s'ouvre, accepte puis reviens ici.")
+            .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity, minHeight: 160)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
       }
-      .disabled(glasses.vocabulary.cards.isEmpty)
-    }
-  }
 
-  private var questionControls: some View {
-    VStack(spacing: 6) {
-      Button {
-        if glasses.isListening {
-          glasses.stopListening()
-        } else {
-          Task { await glasses.listenForQuestion() }
-        }
-      } label: {
-        Label(glasses.isListening ? "Je t'écoute…" : "Poser une question", systemImage: glasses.isListening ? "waveform" : "mic.fill")
-          .frame(maxWidth: .infinity).padding(.vertical, 6)
+      if glasses.isStreaming { actionArea }
+
+      Button(role: .destructive) { glasses.powerOff() } label: {
+        Label("Arrêter", systemImage: "stop.circle").frame(maxWidth: .infinity)
       }
       .buttonStyle(.bordered)
-      .disabled(glasses.isThinking)
-      if !glasses.transcript.isEmpty {
-        Text("« \(glasses.transcript) »").font(.callout).foregroundStyle(.secondary)
-      }
-      Text("Ou, sans toucher le téléphone : « Hey Meta, lance Lǎoshī », puis ta question.")
-        .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
     }
   }
 
-  private func challengeCard(_ word: Card) -> some View {
-    VStack(spacing: 8) {
-      Text("Trouve autour de toi :").foregroundStyle(.secondary)
-      Text(word.hanzi).font(.system(size: 56))
-      PinyinText(pinyin: word.pinyin).font(.title3)
-      HStack {
-        Button("Je l'ai trouvé !") {
-          Task {
-            await glasses.scan(challenge: word.hanzi)
-            if glasses.lastResult?.challenge?.found == true { challengeWord = nil }
-          }
+  @ViewBuilder private var actionArea: some View {
+    VStack(spacing: 10) {
+      if glasses.mode == .challenge, let word = glasses.challengeWord {
+        VStack(spacing: 4) {
+          Text("Trouve autour de toi :").foregroundStyle(.secondary)
+          Text(word.hanzi).font(.system(size: 56))
+          PinyinText(pinyin: word.pinyin).font(.title3)
         }
-        .buttonStyle(.borderedProminent)
-        Button("Abandonner") { challengeWord = nil }
       }
+      if glasses.mode == .ask, !glasses.transcript.isEmpty {
+        Text("« \(glasses.transcript) »").font(.title3).multilineTextAlignment(.center)
+      }
+      if glasses.mode == .walk {
+        Label(glasses.autoMode ? "Balade en cours : une leçon toutes les 15 s" : "Balade en pause", systemImage: "figure.walk")
+          .foregroundStyle(.secondary)
+      }
+      Button {
+        Task { await glasses.primaryAction() }
+      } label: {
+        Label(actionTitle, systemImage: actionIcon)
+          .font(.title3.bold()).frame(maxWidth: .infinity).padding(.vertical, 14)
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(glasses.isListening ? .red : .accentColor)
+      .disabled(glasses.isThinking)
+      Text("Astuce : le bouton photo de tes lunettes fait la même chose.")
+        .font(.caption).foregroundStyle(.secondary)
     }
-    .frame(maxWidth: .infinity)
-    .padding()
-    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+  }
+
+  private var actionTitle: String {
+    if glasses.isThinking { return "Le prof réfléchit…" }
+    switch glasses.mode {
+    case .look: return "Qu'est-ce que je vois ?"
+    case .ask: return glasses.isListening ? "J'écoute… (touche pour finir)" : "Parler au prof"
+    case .walk: return "Leçon maintenant"
+    case .challenge: return glasses.challengeWord == nil ? "Nouveau défi" : "Je l'ai trouvé !"
+    }
+  }
+
+  private var actionIcon: String {
+    switch glasses.mode {
+    case .look: return "eye.fill"
+    case .ask: return glasses.isListening ? "waveform" : "mic.fill"
+    case .walk: return "sparkles"
+    case .challenge: return glasses.challengeWord == nil ? "target" : "checkmark.circle.fill"
+    }
+  }
+
+  @ViewBuilder private var results: some View {
+    if let answer = glasses.lastAnswer { AnswerView(answer: answer, replay: replay) }
+    if let result = glasses.lastResult { LessonView(result: result, replay: replay) }
   }
 
   private func replay() {
     guard let speech = glasses.lastAnswer?.speech ?? glasses.lastResult?.speech else { return }
     Task { await glasses.speaker.speak(speech) }
+  }
+}
+
+// MARK: - Le gros bouton
+
+struct PowerButton: View {
+  let glasses: GlassesController
+
+  var body: some View {
+    VStack(spacing: 14) {
+      Button { glasses.powerOn() } label: {
+        VStack(spacing: 8) {
+          Image(systemName: "power").font(.system(size: 44, weight: .bold))
+          Text("Démarrer").font(.title2.bold())
+        }
+        .foregroundStyle(.white)
+        .frame(width: 180, height: 180)
+        .background(Circle().fill(Color.accentColor))
+        .shadow(color: .accentColor.opacity(0.35), radius: 16, y: 6)
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("Démarrer Lǎoshī")
+      Text("Mets tes lunettes, choisis un mode, puis appuie.")
+        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 8)
+  }
+}
+
+// MARK: - Les 3 étapes
+
+struct StepsView: View {
+  let glasses: GlassesController
+
+  var body: some View {
+    HStack(spacing: 8) {
+      step("Autorisation", done: glasses.isRegistered, active: glasses.running && !glasses.isRegistered)
+      step("Lunettes", done: glasses.isSessionStarted, active: glasses.running && glasses.isRegistered && !glasses.isSessionStarted)
+      step("Caméra", done: glasses.hasFirstFrame, active: glasses.isSessionStarted && !glasses.hasFirstFrame)
+    }
+  }
+
+  private func step(_ title: String, done: Bool, active: Bool) -> some View {
+    VStack(spacing: 4) {
+      ZStack {
+        if active {
+          ProgressView()
+        } else {
+          Image(systemName: done ? "checkmark.circle.fill" : "circle")
+            .font(.title2)
+            .foregroundStyle(done ? Color.green : Color.secondary)
+        }
+      }
+      .frame(height: 28)
+      Text(title).font(.caption.bold()).foregroundStyle(done ? .primary : .secondary)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 8)
+    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+  }
+}
+
+// MARK: - Choix du mode
+
+struct ModePicker: View {
+  @Binding var selection: LessonMode
+
+  var body: some View {
+    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+      ForEach(LessonMode.allCases) { mode in
+        Button { selection = mode } label: {
+          VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: mode.icon).font(.title2)
+            Text(mode.title).font(.headline)
+            Text(mode.hint).font(.caption).foregroundStyle(.secondary)
+              .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+          }
+          .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
+          .padding(12)
+          .background(
+            RoundedRectangle(cornerRadius: 14)
+              .fill(selection == mode ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08))
+          )
+          .overlay(
+            RoundedRectangle(cornerRadius: 14)
+              .stroke(selection == mode ? Color.accentColor : .clear, lineWidth: 2)
+          )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selection == mode ? .isSelected : [])
+      }
+    }
+  }
+}
+
+// MARK: - Fil d'activité et erreurs
+
+struct ActivityList: View {
+  let entries: [ActivityEntry]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Ce qui se passe").font(.headline)
+      if entries.isEmpty {
+        Text("Rien pour l'instant. Appuie sur « Démarrer ».").font(.subheadline).foregroundStyle(.secondary)
+      }
+      ForEach(entries.prefix(8)) { entry in
+        HStack(alignment: .top, spacing: 8) {
+          Image(systemName: icon(entry.kind)).foregroundStyle(color(entry.kind))
+          VStack(alignment: .leading, spacing: 2) {
+            Text(entry.text).font(.subheadline)
+            Text(entry.date, style: .time).font(.caption2).foregroundStyle(.secondary)
+          }
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding()
+    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+  }
+
+  private func icon(_ kind: ActivityEntry.Kind) -> String {
+    switch kind {
+    case .info: return "info.circle"
+    case .success: return "checkmark.circle.fill"
+    case .warning: return "exclamationmark.triangle.fill"
+    case .error: return "xmark.octagon.fill"
+    }
+  }
+
+  private func color(_ kind: ActivityEntry.Kind) -> Color {
+    switch kind {
+    case .info: return .secondary
+    case .success: return .green
+    case .warning: return .orange
+    case .error: return .red
+    }
+  }
+}
+
+struct ErrorBanner: View {
+  let text: String
+  let dismiss: () -> Void
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.white)
+      Text(text).foregroundStyle(.white).font(.subheadline.weight(.semibold))
+        .frame(maxWidth: .infinity, alignment: .leading)
+      Button(action: dismiss) { Image(systemName: "xmark").foregroundStyle(.white) }
+        .accessibilityLabel("Fermer")
+    }
+    .padding()
+    .background(Color.red, in: RoundedRectangle(cornerRadius: 14))
   }
 }
 
