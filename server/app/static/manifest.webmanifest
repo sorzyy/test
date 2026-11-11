@@ -1,0 +1,9 @@
+{
+  "name": "Lǎoshī — prof de chinois",
+  "short_name": "Lǎoshī",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#b3261e",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

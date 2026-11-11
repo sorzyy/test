@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Lǎoshī</title>
+  <meta name="description" content="Ton prof de chinois qui voit ce que tu vois.">
+  <meta name="theme-color" content="#b3261e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="brand-zh">老师</span> Lǎoshī</div>
+    <div id="status" class="status" aria-live="polite"></div>
+  </header>
+
+  <main>
+    <!-- SCANNER -->
+    <section id="view-scan" class="view active" aria-labelledby="tab-scan">
+      <div class="camera">
+        <video id="video" playsinline muted autoplay></video>
+        <div id="camera-off" class="camera-off" hidden>
+          <p>Caméra indisponible.</p>
+          <label class="btn secondary">Prendre une photo
+            <input id="file" type="file" accept="image/*" capture="environment" hidden>
+          </label>
+        </div>
+      </div>
+      <div class="actions">
+        <button id="btn-scan" class="btn primary big">Qu'est-ce que je vois ?</button>
+        <label class="toggle"><input id="auto" type="checkbox"> Mode balade (toutes les 15 s)</label>
+      </div>
+      <div id="result"></div>
+    </section>
+
+    <!-- DÉFI -->
+    <section id="view-challenge" class="view" aria-labelledby="tab-challenge">
+      <div id="challenge-box" class="card challenge"></div>
+      <div class="camera small">
+        <video id="video2" playsinline muted autoplay></video>
+      </div>
+      <div class="actions">
+        <button id="btn-found" class="btn primary big">Je l'ai trouvé !</button>
+        <button id="btn-skip" class="btn secondary">Autre mot</button>
+      </div>
+      <div id="challenge-result"></div>
+    </section>
+
+    <!-- RÉVISION -->
+    <section id="view-review" class="view" aria-labelledby="tab-review">
+      <div id="review-box"></div>
+    </section>
+
+    <!-- RÉGLAGES -->
+    <section id="view-settings" class="view" aria-labelledby="tab-settings">
+      <div class="card form">
+        <label>Niveau
+          <select id="level">
+            <option value="debutant">Débutant (HSK 1-2)</option>
+            <option value="intermediaire">Intermédiaire (HSK 3-4)</option>
+            <option value="avance">Avancé</option>
+          </select>
+        </label>
+        <label>Mots nouveaux par photo
+          <select id="max-new">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+          </select>
+        </label>
+        <label>Vitesse de la voix chinoise
+          <input id="rate" type="range" min="0.5" max="1.2" step="0.05">
+        </label>
+        <button id="btn-voice" class="btn secondary">Tester la voix</button>
+        <p id="voice-info" class="muted"></p>
+        <label>Adresse du serveur <span class="muted">(vide = ce site)</span>
+          <input id="server" type="url" placeholder="https://mon-serveur.onrender.com" autocomplete="off">
+        </label>
+        <label>Jeton d'accès <span class="muted">(si le serveur en demande un)</span>
+          <input id="token" type="password" autocomplete="off">
+        </label>
+      </div>
+      <div class="card form">
+        <h2>Mon vocabulaire</h2>
+        <p id="deck-stats" class="muted"></p>
+        <div class="row">
+          <button id="btn-export" class="btn secondary">Exporter</button>
+          <label class="btn secondary">Importer<input id="import" type="file" accept="application/json" hidden></label>
+          <button id="btn-reset" class="btn danger">Tout effacer</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Comment ça marche</h2>
+        <ul class="method">
+          <li><b>Le monde réel comme manuel.</b> Un mot vu sur un objet de ta vie se retient bien mieux qu'une liste.</li>
+          <li><b>Peu de nouveautés à la fois.</b> 1 à 3 mots nouveaux par photo, le reste en mots connus.</li>
+          <li><b>Rappel actif.</b> Le prof te dit le mot chinois d'abord, la traduction après : essaie de répondre avant.</li>
+          <li><b>Répétition espacée.</b> Chaque mot revient au bon moment (1, 3, 7, 16, 35 jours).</li>
+          <li><b>Défis.</b> Retrouver l'objet autour de toi, c'est la meilleure des révisions.</li>
+          <li><b>Base sûre.</b> Le pinyin est vérifié avec un dictionnaire ; ⚠ s'affiche quand il y a un doute.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" role="tablist">
+    <button id="tab-scan" role="tab" data-view="scan" class="active"><span aria-hidden="true">👁</span>Voir</button>
+    <button id="tab-challenge" role="tab" data-view="challenge"><span aria-hidden="true">🎯</span>Défi</button>
+    <button id="tab-review" role="tab" data-view="review"><span aria-hidden="true">🗂</span>Révision<b id="due-badge" class="badge" hidden></b></button>
+    <button id="tab-settings" role="tab" data-view="settings"><span aria-hidden="true">⚙︎</span>Réglages</button>
+  </nav>
+
+  <canvas id="canvas" hidden></canvas>
+  <script src="app.js"></script>
+</body>
+</html>

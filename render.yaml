@@ -1,26 +1,20 @@
-# Déploiement en un clic sur Render (offre gratuite) :
-# https://render.com/deploy?repo=https://github.com/sorzyy/test
+# Déploiement gratuit sur Render : New > Blueprint > ce dépôt.
+# Ensuite, dans le tableau de bord Render, renseigne ANTHROPIC_API_KEY (et LAOSHI_TOKEN).
 services:
   - type: web
-    name: saphir
-    runtime: docker
+    name: laoshi
+    runtime: python
     plan: free
-    healthCheckPath: /api/status
-    autoDeploy: true
+    rootDir: server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
     envVars:
-      - key: TRUST_PROXY
-        value: "1"
-      - key: MAX_CONCURRENT_JOBS
-        value: "2"
-      # 512 Mo de RAM en offre gratuite : un seul processus yt-dlp gardé chaud
-      - key: EXTRACT_WORKERS
-        value: "1"
-      - key: RATE_LIMIT_PER_MINUTE
-        value: "20"
-      - key: MAX_FILESIZE_MB
-        value: "500"
-      - key: CORS_ORIGINS
-        value: "https://sorzyy.github.io"
-      # contenu de ton cookies.txt Instagram (optionnel, mais conseillé : voir le README)
-      - key: COOKIES_TXT
+      - key: ANTHROPIC_API_KEY
         sync: false
+      - key: LAOSHI_TOKEN
+        sync: false
+      - key: LAOSHI_MODEL
+        value: claude-opus-5-5
+      - key: LAOSHI_EFFORT
+        value: low
