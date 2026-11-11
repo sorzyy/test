@@ -70,7 +70,7 @@ utiliser ta clé API.
 | `GEMINI_API_KEY` | — | Clé Gemini : active le fournisseur Gemini |
 | `ANTHROPIC_API_KEY` | — | Clé Claude (utilisée seulement s'il n'y a pas de clé Gemini) |
 | `LAOSHI_PROVIDER` | auto | `gemini`, `claude` ou `demo` pour forcer un fournisseur |
-| `LAOSHI_MODEL` | `gemini-flash-latest` / `claude-opus-5-5` | Modèle utilisé |
+| `LAOSHI_MODEL` | `gemini-3.5-flash` / `claude-opus-5-5` | Modèle utilisé |
 | `LAOSHI_EFFORT` | `low` | Profondeur de réflexion : `low` = rapide, `medium`/`high` = plus soigné mais plus lent |
 | `LAOSHI_TOKEN` | vide | Jeton exigé dans l'en-tête `X-Laoshi-Token` |
 | `LAOSHI_DEMO` | — | `1` pour forcer le mode démo |

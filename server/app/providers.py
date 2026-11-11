@@ -72,8 +72,13 @@ class GeminiProvider:
     def client(self):
         if self._client is None:
             from google import genai
+            from google.genai import types
 
-            self._client = genai.Client()  # lit GEMINI_API_KEY (ou GOOGLE_API_KEY)
+            # Lit GEMINI_API_KEY (ou GOOGLE_API_KEY). Dans des lunettes, une réponse qui
+            # arrive après 30 s ne sert plus à rien : délai court, une seule nouvelle tentative.
+            self._client = genai.Client(
+                http_options=types.HttpOptions(timeout=30_000, retry_options=types.HttpRetryOptions(attempts=2))
+            )
         return self._client
 
     async def generate(self, system: str, text: str, schema: dict, image: Image | None) -> tuple[dict, str]:
@@ -108,6 +113,8 @@ class GeminiProvider:
                 raise TutorError(f"Modèle Gemini inconnu : {self.settings.model_name}.", 500) from exc
             raise TutorError("Gemini a refusé la requête.", 400) from exc
         except errors.ServerError as exc:
+            if exc.code == 504:
+                raise TutorError("Gemini met trop de temps à répondre, réessaie.", 504) from exc
             log.warning("Erreur serveur Gemini : %s", exc)
             raise TutorError("Le service Gemini est indisponible, réessaie.", 503) from exc
 

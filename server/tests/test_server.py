@@ -195,7 +195,7 @@ def test_gemini_ask_with_image():
     assert res.model == "gemini-test"
     assert [w.hanzi for w in res.words] == ["座位", "椅子"]
     kw = models.kwargs
-    assert kw["model"] == "gemini-flash-latest"
+    assert kw["model"] == "gemini-3.5-flash"
     cfg = kw["config"]
     assert cfg.response_mime_type == "application/json"
     assert "additionalProperties" not in json.dumps(cfg.response_json_schema)
@@ -219,7 +219,7 @@ def test_provider_detection(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     assert Settings().provider == "claude"
     monkeypatch.setenv("GEMINI_API_KEY", "x")
-    assert Settings().provider == "gemini" and Settings().model_name == "gemini-flash-latest"
+    assert Settings().provider == "gemini" and Settings().model_name == "gemini-3.5-flash"
     monkeypatch.setenv("LAOSHI_PROVIDER", "claude")
     assert Settings().provider == "claude"
 

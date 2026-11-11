@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass, field
 
 DEFAULT_MODELS = {
-    "gemini": "gemini-flash-latest",
+    "gemini": "gemini-3.5-flash",
     "claude": "claude-opus-5-5",
     "demo": "",
 }
