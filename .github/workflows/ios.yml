@@ -1,0 +1,31 @@
+name: App iPhone (compilation)
+on:
+  push:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Choisir le Xcode le plus récent
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+      - name: Générer le projet
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Compiler (simulateur, sans signature)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project Laoshi.xcodeproj -scheme Laoshi \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee build.log | grep -E "error:|warning: .*Laoshi/|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log
