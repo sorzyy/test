@@ -12,6 +12,8 @@ struct ContentView: View {
           connectionCard
           if glasses.isStreaming { lessonControls }
           if let challengeWord { challengeCard(challengeWord) }
+          if glasses.isSessionStarted { questionControls }
+          if let answer = glasses.lastAnswer { AnswerView(answer: answer, replay: replay) }
           if let result = glasses.lastResult { LessonView(result: result, replay: replay) }
           if let message = glasses.message {
             Text(message).font(.footnote).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading)
@@ -87,6 +89,28 @@ struct ContentView: View {
     }
   }
 
+  private var questionControls: some View {
+    VStack(spacing: 6) {
+      Button {
+        if glasses.isListening {
+          glasses.stopListening()
+        } else {
+          Task { await glasses.listenForQuestion() }
+        }
+      } label: {
+        Label(glasses.isListening ? "Je t'écoute…" : "Poser une question", systemImage: glasses.isListening ? "waveform" : "mic.fill")
+          .frame(maxWidth: .infinity).padding(.vertical, 6)
+      }
+      .buttonStyle(.bordered)
+      .disabled(glasses.isThinking)
+      if !glasses.transcript.isEmpty {
+        Text("« \(glasses.transcript) »").font(.callout).foregroundStyle(.secondary)
+      }
+      Text("Ou, sans toucher le téléphone : « Hey Meta, lance Lǎoshī », puis ta question.")
+        .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+    }
+  }
+
   private func challengeCard(_ word: Card) -> some View {
     VStack(spacing: 8) {
       Text("Trouve autour de toi :").foregroundStyle(.secondary)
@@ -109,8 +133,8 @@ struct ContentView: View {
   }
 
   private func replay() {
-    guard let result = glasses.lastResult else { return }
-    Task { await glasses.speaker.speak(result.speech) }
+    guard let speech = glasses.lastAnswer?.speech ?? glasses.lastResult?.speech else { return }
+    Task { await glasses.speaker.speak(speech) }
   }
 }
 
@@ -142,6 +166,21 @@ struct LessonView: View {
   }
 }
 
+struct AnswerView: View {
+  let answer: AskResult
+  let replay: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("« \(answer.question) »").font(.headline)
+      if !answer.intro.isEmpty { Text(answer.intro) }
+      ForEach(answer.words) { WordCard(word: $0) }
+      if !answer.followup.isEmpty { Text(answer.followup).foregroundStyle(.secondary) }
+      Button("🔊 Réécouter", action: replay)
+    }
+  }
+}
+
 struct WordCard: View {
   let word: Word
 
@@ -156,7 +195,7 @@ struct WordCard: View {
           .background(word.status == "new" ? Color.red.opacity(0.85) : Color.secondary.opacity(0.2), in: Capsule())
           .foregroundStyle(word.status == "new" ? .white : .primary)
       }
-      Text(word.fr).font(.headline) + Text("  · \(word.where)").foregroundStyle(.secondary)
+      Text(word.fr).font(.headline) + Text(word.where.isEmpty ? "" : "  · \(word.where)").foregroundStyle(.secondary)
       if !word.pinyinCheck.ok {
         Text("⚠ Pinyin à vérifier — dictionnaire : \(word.pinyinCheck.dictionary)")
           .font(.caption).foregroundStyle(.orange)

@@ -98,6 +98,18 @@ main { max-width: 640px; margin: 0 auto; padding: 16px; }
 .btn.big { padding: 16px; font-size: 18px; }
 .btn.danger { color: var(--accent); }
 .btn:disabled { opacity: .55; cursor: progress; }
+.ask { display: flex; gap: 8px; align-items: center; margin: 0 0 8px; }
+.ask input {
+  flex: 1; min-width: 0; font: inherit; padding: 10px 12px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+}
+.mic {
+  flex: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--surface); font-size: 20px; cursor: pointer;
+}
+.mic.listening { background: var(--accent); border-color: var(--accent); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(1.08); } }
+.question { font-weight: 600; margin: 4px 2px 0; }
 .toggle { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 15px; justify-content: center; }
 
 .card {

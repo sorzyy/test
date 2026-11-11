@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import Settings, get_settings
-from .schemas import ScanRequest, ScanResult
+from .schemas import AskRequest, AskResult, ScanRequest, ScanResult
 from .tutor import Tutor, TutorError
 
 logging.basicConfig(level=logging.INFO)
@@ -50,7 +50,8 @@ def health(settings: Settings = Depends(get_settings)) -> dict:
     return {
         "ok": True,
         "demo": settings.demo,
-        "model": None if settings.demo else settings.model,
+        "provider": settings.provider,
+        "model": settings.model_name or None,
         "token_required": bool(settings.access_token),
     }
 
@@ -59,6 +60,15 @@ def health(settings: Settings = Depends(get_settings)) -> dict:
 async def scan(req: ScanRequest, tutor: Tutor = Depends(get_tutor)) -> ScanResult:
     try:
         return await tutor.scan(req)
+    except TutorError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+
+
+@app.post("/api/ask", response_model=AskResult, dependencies=[Depends(check_token)])
+async def ask(req: AskRequest, tutor: Tutor = Depends(get_tutor)) -> AskResult:
+    """Question orale : « que veut dire siège en chinois ? »."""
+    try:
+        return await tutor.ask(req)
     except TutorError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
 

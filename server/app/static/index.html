@@ -32,6 +32,11 @@
         <button id="btn-scan" class="btn primary big">Qu'est-ce que je vois ?</button>
         <label class="toggle"><input id="auto" type="checkbox"> Mode balade (toutes les 15 s)</label>
       </div>
+      <form id="ask-form" class="ask" autocomplete="off">
+        <button type="button" id="btn-mic" class="mic" aria-label="Poser la question à voix haute">🎤</button>
+        <input id="question" type="text" placeholder="Que veut dire « siège » en chinois ?" enterkeyhint="send" aria-label="Ta question au prof">
+        <button type="submit" class="btn primary">Demander</button>
+      </form>
       <div id="result"></div>
     </section>
 

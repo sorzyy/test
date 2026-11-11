@@ -7,9 +7,13 @@ import UIKit
 #if canImport(MWDATInputs)
 import MWDATInputs
 #endif
+#if canImport(MWDATSpeech)
+import MWDATSpeech
+#endif
 
 /// Pilote les lunettes : enregistrement auprès de Meta AI, session, flux caméra,
-/// bouton photo, puis envoi de l'image au prof et lecture de la leçon.
+/// bouton photo, « Hey Meta, lance Lǎoshī », micro des lunettes, puis envoi au prof
+/// et lecture de la réponse dans les haut-parleurs des lunettes.
 @Observable
 @MainActor
 final class GlassesController {
@@ -21,7 +25,10 @@ final class GlassesController {
   var hasActiveDevice = false
   var preview: UIImage?
   var isThinking = false
+  var isListening = false
+  var transcript = ""
   var lastResult: ScanResult?
+  var lastAnswer: AskResult?
   var message: String?
   var autoMode = false {
     didSet { autoMode ? startAutoMode() : stopAutoMode() }
@@ -44,6 +51,7 @@ final class GlassesController {
 
   var isStreaming: Bool { streamState == .streaming }
   var isRegistered: Bool { registrationState == .registered }
+  var isSessionStarted: Bool { sessionState == .started }
 
   // MARK: Privé
 
@@ -53,12 +61,20 @@ final class GlassesController {
   @ObservationIgnored private var camera: MWDATCamera.Camera?
   @ObservationIgnored private let sessionTokens = ListenerTokenBag()
   @ObservationIgnored private let streamTokens = ListenerTokenBag()
+  @ObservationIgnored private let voiceTokens = ListenerTokenBag()
+  @ObservationIgnored private let speechTokens = ListenerTokenBag()
   @ObservationIgnored private let latestFrame = FrameBox()
   @ObservationIgnored private var photoWaiter: CheckedContinuation<Data?, Never>?
   @ObservationIgnored private var photoRequest = 0
   @ObservationIgnored private var tasks: [Task<Void, Never>] = []
   @ObservationIgnored private var autoTask: Task<Void, Never>?
   @ObservationIgnored private var inputsTask: Task<Void, Never>?
+  @ObservationIgnored private var voiceStream: VoiceInvocationsStream?
+  @ObservationIgnored private var listenAfterStart = false
+  @ObservationIgnored private var listenTimeout: Task<Void, Never>?
+  #if canImport(MWDATSpeech)
+  @ObservationIgnored private var speech: Speech?
+  #endif
   @ObservationIgnored let speaker = Speaker()
   @ObservationIgnored let vocabulary = Vocabulary()
 
@@ -75,6 +91,7 @@ final class GlassesController {
       guard let selector = self?.deviceSelector else { return }
       for await device in selector.activeDeviceStream() {
         self?.hasActiveDevice = device != nil
+        if let device { self?.startVoiceInvocations(on: device) }
       }
     })
   }
@@ -93,7 +110,49 @@ final class GlassesController {
     }
   }
 
-  // MARK: 2. Session + caméra
+  // MARK: 2. « Hey Meta, lance Lǎoshī »
+
+  /// Meta AI ne transmet pas les questions libres aux apps tierces : il peut seulement
+  /// lancer (ou ramener au premier plan) une app. On s'en sert comme mot d'éveil :
+  /// « Hey Meta, lance Lǎoshī » → les lunettes disent « Oui ? » → on écoute la question
+  /// avec le micro des lunettes → le prof répond dans les lunettes.
+  ///
+  /// Expérimental : à activer dans le Wearables Developer Center (nom prononcé de l'app inclus).
+  private func startVoiceInvocations(on device: DeviceIdentifier) {
+    do {
+      let stream: VoiceInvocationsStream
+      if let voiceStream {
+        stream = voiceStream
+      } else {
+        stream = try VoiceInvocationsStream(wearables: wearables)
+        voiceStream = stream
+        stream.invocationsPublisher.listen { [weak self] invocation in
+          guard let launch = invocation as? LaunchApp else { return }
+          Task { @MainActor in
+            _ = await launch.responseHandle.sendSuccess(actionOutput: nil)
+            self?.heyMeta()
+          }
+        }.store(in: voiceTokens)
+        stream.errorPublisher.listen { error in
+          NSLog("[Laoshi] Hey Meta : \(error.localizedDescription)")
+        }.store(in: voiceTokens)
+      }
+      try stream.start(deviceIdentifier: device)
+    } catch {
+      NSLog("[Laoshi] « Hey Meta » indisponible : \(error)")
+    }
+  }
+
+  private func heyMeta() {
+    if isSessionStarted {
+      Task { await listenForQuestion() }
+    } else {
+      listenAfterStart = true
+      start()
+    }
+  }
+
+  // MARK: 3. Session + caméra
 
   func start() {
     guard session == nil else { return }
@@ -116,6 +175,7 @@ final class GlassesController {
 
   func stop() {
     autoMode = false
+    stopListening()
     speaker.stop()
     session?.stop()
   }
@@ -124,8 +184,14 @@ final class GlassesController {
     sessionState = state
     switch state {
     case .started:
-      Task { await startCamera() }
       attachCaptureButton()
+      Task {
+        await startCamera()
+        if listenAfterStart {
+          listenAfterStart = false
+          await listenForQuestion()
+        }
+      }
     case .stopped:
       cleanupSession()
     default:
@@ -185,8 +251,7 @@ final class GlassesController {
   }
 
   /// Bouton photo de la branche des lunettes → lance une leçon (mains libres).
-  /// Fonction expérimentale du SDK : elle doit être activée pour l'app dans le
-  /// Wearables Developer Center. Sans elle, on utilise le bouton du téléphone ou le mode balade.
+  /// Expérimental : à activer pour l'app dans le Wearables Developer Center.
   private func attachCaptureButton() {
     #if canImport(MWDATInputs)
     guard let session, inputsTask == nil else { return }
@@ -214,6 +279,11 @@ final class GlassesController {
 
   private func cleanupSession() {
     cleanupStream()
+    stopListening()
+    speechTokens.clear()
+    #if canImport(MWDATSpeech)
+    speech = nil
+    #endif
     inputsTask?.cancel()
     inputsTask = nil
     sessionTokens.clear()
@@ -222,7 +292,112 @@ final class GlassesController {
     streamState = .stopped
   }
 
-  // MARK: 3. Leçon
+  // MARK: 4. Écouter une question (micro des lunettes)
+
+  func listenForQuestion() async {
+    #if canImport(MWDATSpeech)
+    guard let session, session.state == .started else {
+      listenAfterStart = true
+      start()
+      return
+    }
+    guard !isListening, !isThinking else { return }
+    do {
+      if try await wearables.checkPermissionStatus(.microphone) != .granted {
+        guard try await wearables.requestPermission(.microphone) == .granted else {
+          report("Permission micro refusée dans Meta AI.")
+          return
+        }
+      }
+      if speech == nil {
+        guard let newSpeech = try session.addSpeech() else {
+          report("Reconnaissance vocale indisponible sur ces lunettes.")
+          return
+        }
+        newSpeech.transcriptionPublisher.listen { [weak self] result in
+          let text = result.text
+          let isFinal = result.isFinal
+          Task { @MainActor in self?.heard(text, isFinal: isFinal) }
+        }.store(in: speechTokens)
+        newSpeech.errorPublisher.listen { [weak self] error in
+          Task { @MainActor in
+            self?.stopListening()
+            self?.report("Micro : \(error.localizedDescription)")
+          }
+        }.store(in: speechTokens)
+        speech = newSpeech
+      }
+    } catch {
+      report("Micro : \(error.localizedDescription)")
+      return
+    }
+
+    // Signal sonore dans les lunettes, puis on écoute (pas pendant : il s'entendrait).
+    await speaker.speak([SpeechSegment(lang: "fr-FR", text: "Oui ?")])
+    transcript = ""
+    isListening = true
+    speech?.start()
+    listenTimeout?.cancel()
+    listenTimeout = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(10))
+      guard let self, !Task.isCancelled, self.isListening else { return }
+      let text = self.transcript
+      self.stopListening()
+      if !text.isEmpty { await self.ask(text) }
+    }
+    #else
+    report("Ajoute le module MWDATSpeech au projet pour poser des questions à voix haute.")
+    #endif
+  }
+
+  private func heard(_ text: String, isFinal: Bool) {
+    guard isListening else { return }
+    transcript = text
+    if isFinal, !text.trimmingCharacters(in: .whitespaces).isEmpty {
+      stopListening()
+      Task { await ask(text) }
+    }
+  }
+
+  func stopListening() {
+    listenTimeout?.cancel()
+    listenTimeout = nil
+    guard isListening else { return }
+    isListening = false
+    #if canImport(MWDATSpeech)
+    speech?.stop()
+    #endif
+  }
+
+  // MARK: 5. Le prof
+
+  private var client: TutorClient { TutorClient(serverURL: serverURL, token: token) }
+
+  /// Question orale : « que veut dire siège en chinois ? ».
+  /// On joint la dernière image des lunettes, pour « c'est quoi ça en chinois ? ».
+  func ask(_ question: String) async {
+    guard !isThinking else { return }
+    isThinking = true
+    speaker.stop()
+    defer { isThinking = false }
+    do {
+      let result = try await client.ask(
+        question: question,
+        jpeg: isStreaming ? latestFrame.jpeg() : nil,
+        level: level,
+        known: vocabulary.known,
+        learning: vocabulary.learning
+      )
+      vocabulary.record(result.words)
+      lastAnswer = result
+      lastResult = nil
+      message = nil
+      await speaker.speak(result.speech)
+    } catch {
+      report(error.localizedDescription)
+      await speaker.speak([SpeechSegment(lang: "fr-FR", text: "Désolé, je n'ai pas pu répondre.")])
+    }
+  }
 
   /// Prend une photo avec les lunettes, l'envoie au prof, lit la leçon.
   func scan(challenge: String? = nil) async {
@@ -232,6 +407,7 @@ final class GlassesController {
       return
     }
     isThinking = true
+    stopListening()
     speaker.stop()
     defer { isThinking = false }
 
@@ -240,7 +416,6 @@ final class GlassesController {
       return
     }
     do {
-      let client = TutorClient(serverURL: serverURL, token: token)
       let result = try await client.scan(
         jpeg: jpeg,
         level: level,
@@ -254,6 +429,7 @@ final class GlassesController {
         vocabulary.grade(challenge, good: true)
       }
       lastResult = result
+      lastAnswer = nil
       message = nil
       await speaker.speak(result.speech)
     } catch {
@@ -291,7 +467,7 @@ final class GlassesController {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(15))
         guard let self, !Task.isCancelled else { return }
-        if self.isStreaming, !self.isThinking, !self.speaker.isSpeaking {
+        if self.isStreaming, !self.isThinking, !self.isListening, !self.speaker.isSpeaking {
           await self.scan()
         }
       }

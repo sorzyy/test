@@ -62,3 +62,24 @@ class ScanResult(BaseModel):
     speech: list[SpeechSegment]
     demo: bool = False
     model: str | None = None
+
+
+class AskRequest(BaseModel):
+    # La question, dite à voix haute ou tapée : « que veut dire siège en chinois ? »
+    question: str = Field(min_length=1, max_length=500)
+    # Optionnel : ce que voient les lunettes au moment de la question
+    # (permet « c'est quoi ça en chinois ? » ou de lever une ambiguïté).
+    image: str | None = None
+    level: Level = "debutant"
+    known: list[str] = Field(default_factory=list, max_length=500)
+    learning: list[str] = Field(default_factory=list, max_length=500)
+
+
+class AskResult(BaseModel):
+    question: str
+    intro: str
+    words: list[Word]
+    followup: str
+    speech: list[SpeechSegment]
+    demo: bool = False
+    model: str | None = None

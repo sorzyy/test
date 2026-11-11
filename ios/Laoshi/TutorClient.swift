@@ -48,6 +48,23 @@ struct ScanResult: Codable {
   let demo: Bool
 }
 
+struct AskResult: Codable {
+  let question: String
+  let intro: String
+  let words: [Word]
+  let followup: String
+  let speech: [SpeechSegment]
+  let demo: Bool
+}
+
+private struct AskRequest: Encodable {
+  let question: String
+  let image: String?
+  let level: String
+  let known: [String]
+  let learning: [String]
+}
+
 private struct ScanRequest: Encodable {
   let image: String
   let level: String
@@ -85,8 +102,34 @@ struct TutorClient {
     learning: [String],
     challenge: String? = nil
   ) async throws -> ScanResult {
+    try await post(
+      "/api/scan",
+      ScanRequest(
+        image: jpeg.base64EncodedString(),
+        level: level,
+        known: Array(known.suffix(300)),
+        learning: Array(learning.suffix(300)),
+        challenge: challenge,
+        maxNew: maxNew
+      ))
+  }
+
+  /// Question orale (« que veut dire siège en chinois ? »), avec ce que voient les lunettes.
+  func ask(question: String, jpeg: Data?, level: String, known: [String], learning: [String]) async throws -> AskResult {
+    try await post(
+      "/api/ask",
+      AskRequest(
+        question: question,
+        image: jpeg?.base64EncodedString(),
+        level: level,
+        known: Array(known.suffix(300)),
+        learning: Array(learning.suffix(300))
+      ))
+  }
+
+  private func post<Body: Encodable, Response: Decodable>(_ path: String, _ body: Body) async throws -> Response {
     let base = serverURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
-    guard let url = URL(string: base + "/api/scan"), url.scheme?.hasPrefix("http") == true else {
+    guard let url = URL(string: base + path), url.scheme?.hasPrefix("http") == true else {
       throw TutorClientError.badServerURL
     }
     var request = URLRequest(url: url, timeoutInterval: 60)
@@ -96,15 +139,7 @@ struct TutorClient {
 
     let encoder = JSONEncoder()
     encoder.keyEncodingStrategy = .convertToSnakeCase
-    request.httpBody = try encoder.encode(
-      ScanRequest(
-        image: jpeg.base64EncodedString(),
-        level: level,
-        known: Array(known.suffix(300)),
-        learning: Array(learning.suffix(300)),
-        challenge: challenge,
-        maxNew: maxNew
-      ))
+    request.httpBody = try encoder.encode(body)
 
     let (data, response) = try await URLSession.shared.data(for: request)
     let decoder = JSONDecoder()
@@ -113,6 +148,6 @@ struct TutorClient {
       let message = (try? decoder.decode(APIError.self, from: data))?.detail ?? "Erreur serveur \(http.statusCode)"
       throw TutorClientError.server(message)
     }
-    return try decoder.decode(ScanResult.self, from: data)
+    return try decoder.decode(Response.self, from: data)
   }
 }

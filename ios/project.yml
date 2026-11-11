@@ -32,3 +32,6 @@ targets:
       # Bouton photo des lunettes (expérimental, à activer dans le Wearables Developer Center).
       - package: MetaWearablesDAT
         product: MWDATInputs
+      # « Hey Meta, lance Lǎoshī » puis question à voix haute (expérimental, idem).
+      - package: MetaWearablesDAT
+        product: MWDATSpeech

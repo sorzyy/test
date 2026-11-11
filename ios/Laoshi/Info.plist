@@ -66,6 +66,8 @@
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Pour se connecter à tes lunettes Meta.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Pour entendre tes questions au prof avec le micro des lunettes.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Pour que le téléphone trouve tes lunettes en Wi-Fi.</string>
 	<key>NSBonjourServices</key>

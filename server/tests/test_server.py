@@ -9,7 +9,9 @@ from app import main
 from app import pinyin as py
 from app.config import Settings, get_settings
 from app.schemas import ScanRequest
-from app.tutor import Tutor, TutorError, assemble, decode_image, demo_data
+from app.providers import ClaudeProvider, GeminiProvider
+from app.schemas import AskRequest
+from app.tutor import Tutor, TutorError, assemble, assemble_ask, decode_image, demo_ask, demo_data
 
 # Plus petit JPEG valide possible (1x1 px).
 JPEG = base64.b64decode(
@@ -62,8 +64,8 @@ def test_syllable_to_numbered():
 # ---------- images ----------
 
 def test_decode_image_data_url():
-    mt, b64 = decode_image("data:image/jpeg;base64," + JPEG_B64, 10**6)
-    assert mt == "image/jpeg" and base64.b64decode(b64) == JPEG
+    img = decode_image("data:image/jpeg;base64," + JPEG_B64, 10**6)
+    assert img.media_type == "image/jpeg" and img.data == JPEG and base64.b64decode(img.b64) == JPEG
 
 
 def test_decode_image_errors():
@@ -117,9 +119,15 @@ def test_challenge():
     assert res.speech[0].lang == "fr-FR"
 
 
-# ---------- appel à Claude (simulé) ----------
+# ---------- fournisseurs (simulés) ----------
 
-class FakeMessages:
+def run(coro):
+    import asyncio
+
+    return asyncio.run(coro)
+
+
+class FakeClaudeMessages:
     def __init__(self, payload, stop_reason="end_turn"):
         self.payload = payload
         self.stop_reason = stop_reason
@@ -134,20 +142,15 @@ class FakeMessages:
         )
 
 
-def fake_client(messages):
-    return SimpleNamespace(beta=SimpleNamespace(messages=messages))
+def claude_tutor(msgs):
+    settings = Settings(provider="claude", effort="low")
+    client = SimpleNamespace(beta=SimpleNamespace(messages=msgs))
+    return Tutor(settings, provider=ClaudeProvider(settings, client=client))
 
 
-def run(coro):
-    import asyncio
-
-    return asyncio.run(coro)
-
-
-def test_tutor_request_shape():
-    msgs = FakeMessages(demo_data(ScanRequest(image="x")))
-    tutor = Tutor(Settings(demo=False, model="claude-opus-5-5", effort="low"), client=fake_client(msgs))
-    res = run(tutor.scan(ScanRequest(image=JPEG_B64, known=["椅子"], learning=["碗"])))
+def test_claude_request_shape():
+    msgs = FakeClaudeMessages(demo_data(ScanRequest(image="x")))
+    res = run(claude_tutor(msgs).scan(ScanRequest(image=JPEG_B64, known=["椅子"], learning=["碗"])))
     assert res.model == "claude-opus-5-5" and not res.demo
     kw = msgs.kwargs
     assert kw["output_config"]["format"]["type"] == "json_schema"
@@ -159,11 +162,89 @@ def test_tutor_request_shape():
     assert kw["system"][0]["cache_control"] == {"type": "ephemeral"}
 
 
-def test_tutor_refusal():
-    tutor = Tutor(Settings(demo=False), client=fake_client(FakeMessages({}, stop_reason="refusal")))
+def test_claude_refusal():
     with pytest.raises(TutorError) as e:
-        run(tutor.scan(ScanRequest(image=JPEG_B64)))
+        run(claude_tutor(FakeClaudeMessages({}, stop_reason="refusal")).scan(ScanRequest(image=JPEG_B64)))
     assert e.value.status == 422
+
+
+class FakeGeminiModels:
+    def __init__(self, payload, finish="FinishReason.STOP"):
+        self.payload = payload
+        self.finish = finish
+        self.kwargs = None
+
+    async def generate_content(self, **kwargs):
+        self.kwargs = kwargs
+        return SimpleNamespace(
+            candidates=[SimpleNamespace(finish_reason=self.finish)],
+            text=json.dumps(self.payload),
+            model_version="gemini-test",
+        )
+
+
+def gemini_tutor(models):
+    settings = Settings(provider="gemini", effort="low")
+    client = SimpleNamespace(aio=SimpleNamespace(models=models))
+    return Tutor(settings, provider=GeminiProvider(settings, client=client))
+
+
+def test_gemini_ask_with_image():
+    models = FakeGeminiModels(demo_ask(AskRequest(question="que veut dire siège")))
+    res = run(gemini_tutor(models).ask(AskRequest(question="Que veut dire siège en chinois ?", image=JPEG_B64)))
+    assert res.model == "gemini-test"
+    assert [w.hanzi for w in res.words] == ["座位", "椅子"]
+    kw = models.kwargs
+    assert kw["model"] == "gemini-flash-latest"
+    cfg = kw["config"]
+    assert cfg.response_mime_type == "application/json"
+    assert "additionalProperties" not in json.dumps(cfg.response_json_schema)
+    assert "RÉPONDRE À UNE QUESTION" in cfg.system_instruction
+    parts = kw["contents"][0].parts
+    assert parts[0].inline_data.mime_type == "image/jpeg"
+    assert "siège" in parts[1].text
+
+
+def test_gemini_safety_block():
+    models = FakeGeminiModels({}, finish="FinishReason.SAFETY")
+    with pytest.raises(TutorError) as e:
+        run(gemini_tutor(models).scan(ScanRequest(image=JPEG_B64)))
+    assert e.value.status == 422
+
+
+def test_provider_detection(monkeypatch):
+    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "LAOSHI_PROVIDER", "LAOSHI_DEMO"):
+        monkeypatch.delenv(k, raising=False)
+    assert Settings().provider == "demo"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    assert Settings().provider == "claude"
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    assert Settings().provider == "gemini" and Settings().model_name == "gemini-flash-latest"
+    monkeypatch.setenv("LAOSHI_PROVIDER", "claude")
+    assert Settings().provider == "claude"
+
+
+# ---------- questions orales ----------
+
+def test_ask_speech_order():
+    res = assemble_ask(demo_ask(AskRequest(question="siège")), AskRequest(question="siège ?"), model=None)
+    texts = [(s.lang, s.text) for s in res.speech]
+    assert texts[0] == ("fr-FR", "Siège, en chinois, se dit :")
+    assert texts[1:3] == [("zh-CN", "座位"), ("zh-CN", "座位")]
+    assert ("fr-FR", "Et aussi, pour « chaise » :") in texts
+
+
+def test_ask_never_reads_hanzi_with_french_voice():
+    data = {"intro": "Siège se dit 座位 :", "words": [demo_ask(AskRequest(question="siège"))["words"][0]], "followup": "On dit aussi 椅子."}
+    res = assemble_ask(data, AskRequest(question="siège"), model=None)
+    for seg in res.speech:
+        if seg.lang == "fr-FR":
+            assert not py.contains_hanzi(seg.text)
+
+
+def test_ask_off_topic():
+    res = assemble_ask({"intro": "Je suis ton prof de chinois !", "words": [], "followup": ""}, AskRequest(question="météo"), model=None)
+    assert res.words == [] and [s.text for s in res.speech] == ["Je suis ton prof de chinois !"]
 
 
 # ---------- API HTTP ----------
@@ -177,7 +258,7 @@ def client():
 
 
 def test_health_and_index(client):
-    main.app.dependency_overrides[get_settings] = lambda: Settings(demo=True)
+    main.app.dependency_overrides[get_settings] = lambda: Settings(provider="demo")
     assert client.get("/api/health").json()["demo"] is True
     r = client.get("/")
     assert r.status_code == 200 and "Lǎoshī" in r.text
@@ -185,7 +266,7 @@ def test_health_and_index(client):
 
 
 def test_scan_demo(client):
-    main.app.dependency_overrides[get_settings] = lambda: Settings(demo=True)
+    main.app.dependency_overrides[get_settings] = lambda: Settings(provider="demo")
     r = client.post("/api/scan", json={"image": JPEG_B64})
     assert r.status_code == 200, r.text
     body = r.json()
@@ -195,12 +276,20 @@ def test_scan_demo(client):
 
 
 def test_scan_token(client):
-    main.app.dependency_overrides[get_settings] = lambda: Settings(demo=True, access_token="secret")
+    main.app.dependency_overrides[get_settings] = lambda: Settings(provider="demo", access_token="secret")
     assert client.post("/api/scan", json={"image": JPEG_B64}).status_code == 401
     r = client.post("/api/scan", json={"image": JPEG_B64}, headers={"X-Laoshi-Token": "secret"})
     assert r.status_code == 200
 
 
 def test_scan_bad_image(client):
-    main.app.dependency_overrides[get_settings] = lambda: Settings(demo=True)
+    main.app.dependency_overrides[get_settings] = lambda: Settings(provider="demo")
     assert client.post("/api/scan", json={"image": "????"}).status_code == 400
+
+
+def test_ask_endpoint_demo(client):
+    main.app.dependency_overrides[get_settings] = lambda: Settings(provider="demo")
+    r = client.post("/api/ask", json={"question": "Dis-moi ce que siège veut dire en chinois"})
+    assert r.status_code == 200, r.text
+    assert r.json()["words"][0]["hanzi"] == "座位"
+    assert client.post("/api/ask", json={"question": ""}).status_code == 422

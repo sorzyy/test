@@ -1,5 +1,5 @@
 # Déploiement gratuit sur Render : New > Blueprint > ce dépôt.
-# Ensuite, dans le tableau de bord Render, renseigne ANTHROPIC_API_KEY (et LAOSHI_TOKEN).
+# Ensuite, dans le tableau de bord Render, renseigne GEMINI_API_KEY (et LAOSHI_TOKEN).
 services:
   - type: web
     name: laoshi
@@ -10,11 +10,9 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
     envVars:
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
       - key: LAOSHI_TOKEN
         sync: false
-      - key: LAOSHI_MODEL
-        value: claude-opus-5-5
       - key: LAOSHI_EFFORT
         value: low

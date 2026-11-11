@@ -173,29 +173,32 @@ function fileToDataURL(file) {
 
 /* ---------- Appel au serveur ---------- */
 
-async function callScan(image, challenge = null) {
+async function callApi(path, body) {
   const base = (settings.server || "").replace(/\/+$/, "");
   const headers = { "Content-Type": "application/json" };
   if (settings.token) headers["X-Laoshi-Token"] = settings.token;
-  const res = await fetch(`${base}/api/scan`, {
+  const res = await fetch(`${base}${path}`, {
     method: "POST",
     headers,
     body: JSON.stringify({
-      image,
       level: settings.level,
-      max_new: Number(settings.maxNew),
       known: knownList().slice(-300),
       learning: learningList().slice(-300),
-      challenge,
+      ...body,
     }),
   });
   if (!res.ok) {
     let msg = `Erreur ${res.status}`;
-    try { msg = (await res.json()).detail || msg; } catch { /* pas du JSON */ }
+    try {
+      const detail = (await res.json()).detail;
+      msg = typeof detail === "string" ? detail : msg;
+    } catch { /* pas du JSON */ }
     throw new Error(msg);
   }
   return res.json();
 }
+const callScan = (image, challenge = null) => callApi("/api/scan", { image, challenge, max_new: Number(settings.maxNew) });
+const callAsk = (question, image = null) => callApi("/api/ask", { question, image });
 
 /* ---------- Affichage d'une leçon ---------- */
 
@@ -211,7 +214,7 @@ function wordHTML(w, i) {
         <span class="pinyin">${pinyinHTML(w.pinyin)}</span>
         <button class="speak" data-say="${i}" aria-label="Écouter ${esc(w.hanzi)}">🔊</button>
       </div>
-      <div><span class="fr">${esc(w.fr)}</span> <span class="tag ${esc(w.status)}">${STATUS_LABEL[w.status] || ""}</span> <span class="muted">· ${esc(w.where)} · HSK ${w.hsk === 7 ? "—" : esc(w.hsk)}</span></div>
+      <div><span class="fr">${esc(w.fr)}</span> <span class="tag ${esc(w.status)}">${STATUS_LABEL[w.status] || ""}</span> <span class="muted">${w.where ? `· ${esc(w.where)} ` : ""}· HSK ${w.hsk === 7 ? "—" : esc(w.hsk)}</span></div>
       ${warn}
       <div class="sub"><span class="zh" lang="zh-CN">${esc(w.measure.zh)}</span> · ${pinyinHTML(w.measure.pinyin)} · <span class="muted">${esc(w.measure.fr)}</span></div>
       <div class="sub"><span class="zh" lang="zh-CN">${esc(w.example.zh)}</span><br>${pinyinHTML(w.example.pinyin)}<br><span class="muted">${esc(w.example.fr)}</span></div>
@@ -285,6 +288,80 @@ $("#auto").addEventListener("change", (e) => {
     }, 15000);
   }
 });
+
+/* ---------- Questions au prof (texte ou voix) ---------- */
+
+function renderAnswer(target, data) {
+  const words = data.words || [];
+  target.innerHTML = `
+    ${data.demo ? `<p class="warn">Mode démo : le serveur n'a pas de clé API, la réponse est fictive.</p>` : ""}
+    <p class="question">« ${esc(data.question)} »</p>
+    <p>${esc(data.intro)}</p>
+    ${words.map(wordHTML).join("")}
+    ${data.followup ? `<p class="muted">${esc(data.followup)}</p>` : ""}
+    <div class="row"><button class="btn secondary" data-replay>🔊 Réécouter</button></div>`;
+  target.querySelectorAll("[data-say]").forEach((b) => b.addEventListener("click", () => {
+    const w = words[Number(b.dataset.say)];
+    speak([{ lang: "zh-CN", text: w.hanzi }, { lang: "zh-CN", text: w.example.zh }]);
+  }));
+  target.querySelector("[data-replay]").addEventListener("click", () => speak(data.speech));
+}
+
+async function runAsk(question) {
+  question = question.trim();
+  if (!question || busy) return;
+  busy = true;
+  $("#btn-scan").disabled = true;
+  setStatus("Le prof réfléchit…");
+  try {
+    // On joint ce que voit la caméra : utile pour « c'est quoi ça en chinois ? ».
+    const image = currentView === "scan" ? grabFrame($("#video")) : null;
+    const data = await callAsk(question, image);
+    for (const w of data.words) if (w.status !== "known") addOrTouch(w);
+    saveDeck();
+    renderAnswer($("#result"), data);
+    $("#question").value = "";
+    setStatus(data.words.length ? `${data.words.length} mot(s)` : "Réponse");
+    speak(data.speech);
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    busy = false;
+    $("#btn-scan").disabled = false;
+  }
+}
+$("#ask-form").addEventListener("submit", (e) => { e.preventDefault(); runAsk($("#question").value); });
+
+// Reconnaissance vocale du navigateur (Chrome, Safari) : on parle, ça pose la question.
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!Recognition) {
+  $("#btn-mic").hidden = true;
+} else {
+  let rec = null;
+  $("#btn-mic").addEventListener("click", () => {
+    if (rec) { rec.stop(); return; }
+    if (synth) synth.cancel();
+    rec = new Recognition();
+    rec.lang = "fr-FR";
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    let finalText = "";
+    rec.onresult = (e) => {
+      const text = Array.from(e.results).map((r) => r[0].transcript).join(" ");
+      $("#question").value = text;
+      if (e.results[e.results.length - 1].isFinal) finalText = text;
+    };
+    rec.onerror = (e) => setStatus(`Micro : ${e.error}`, true);
+    rec.onend = () => {
+      $("#btn-mic").classList.remove("listening");
+      rec = null;
+      if (finalText) runAsk(finalText);
+    };
+    $("#btn-mic").classList.add("listening");
+    setStatus("Je t'écoute…");
+    rec.start();
+  });
+}
 
 /* ---------- Onglet « Défi » ---------- */
 

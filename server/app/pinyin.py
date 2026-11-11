@@ -36,6 +36,10 @@ def is_hanzi(text: str) -> bool:
     return bool(text) and all(_HANZI.match(ch) for ch in text)
 
 
+def contains_hanzi(text: str) -> bool:
+    return bool(_HANZI.search(text))
+
+
 def syllable_to_numbered(syllable: str) -> str:
     """« yǐ » -> « yi3 », « zi » -> « zi5 », « lǜ » -> « lv4 »."""
     tone = 5
