@@ -13,10 +13,11 @@ targets:
     type: application
     platform: iOS
     sources: [Laoshi]
-    info:
-      path: Laoshi/Info.plist
     settings:
       base:
+        # Notre Info.plist (config Meta, adresse de retour laoshi://). Surtout pas « info: » :
+        # XcodeGen réécrirait ce fichier et effacerait la configuration Meta.
+        INFOPLIST_FILE: Laoshi/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.example.laoshi
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
